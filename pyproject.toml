@@ -1,24 +1,13 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1,<2"]
+build-backend = "maturin"
 
 [project]
-name = "quces"
+name = "xquces"
 version = "0.1.0"
-description = "Handy utilities for quantum chemistry simulations"
-readme = "README.md"
-license = {text = "MIT"}
-authors = [{name = "David Omanovic"}]
-requires-python = ">=3.9"
-dependencies = []
+requires-python = ">=3.10"
 
-[project.optional-dependencies]
-dev = ["pytest>=8", "mypy>=1.10", "ruff>=0.5"]
-quantum = ["qiskit>=1.0", "qiskit-aer>=0.14"]
-
-[tool.setuptools]
-package-dir = {"" = "src"}
-
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["quces*"]  
+[tool.maturin]
+features = ["pyo3/extension-module"]
+python-source = "python"
+module-name = "xquces._lib"
