@@ -1,39 +1,46 @@
-# --- Python caches ---
-**/__pycache__/
-**/.pytest_cache/
-**/.mypy_cache/
-**/.ruff_cache/
-**/.nox/
-**/.tox/
+__pycache__/
 *.py[cod]
 *$py.class
 
-# --- Packaging / build output ---
+*.so
+*.pyd
+*.dll
+*.dylib
+
 build/
 dist/
-.eggs/
+site/
 *.egg-info/
+.eggs/
 pip-wheel-metadata/
 
-# --- Virtual envs ---
 .venv/
 venv/
-ENV/
 env/
+ENV/
 
-# --- Editors / OS noise ---
-# (Uncomment the ones you want to ignore)
-# .vscode/
-# .idea/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+.ipynb_checkpoints/
+
+target/
+Cargo.lock
+
+.maturin/
+
 .DS_Store
 Thumbs.db
+
+.idea/
+.vscode/
+
 *.swp
 *.swo
+*~
 
-# --- Logs / temp ---
-*.log
-*.tmp
-*.bak
-
-# --- Windows ADS from downloads ---
-*Zone.Identifier
+.python-version
