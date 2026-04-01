@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from ._lib import apply_ucj_spin_balanced_in_place_num_rep
-from ._lib import apply_ucj_spin_restricted_in_place_num_rep
-from .basis import flatten_state, occ_rows, reshape_state
-from .orbitals import apply_orbital_rotation
+from xquces._lib import apply_ucj_spin_balanced_in_place_num_rep
+from xquces._lib import apply_ucj_spin_restricted_in_place_num_rep
+from xquces.basis import flatten_state, occ_rows, reshape_state
+from xquces.orbitals import apply_orbital_rotation
 
 
 def apply_ucj_spin_restricted(

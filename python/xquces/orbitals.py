@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import scipy.linalg
 
-from .basis import flatten_state, occ_rows, reshape_state
+from xquces.basis import flatten_state, occ_rows, reshape_state
 
 
 def canonicalize_unitary(u: np.ndarray, tol: float = 1e-12) -> np.ndarray:
@@ -38,14 +38,37 @@ def ov_generator_from_t1(t1: np.ndarray) -> np.ndarray:
         raise ValueError("t1 must be a matrix")
     nocc, nvirt = t1.shape
     norb = nocc + nvirt
-    kappa = np.zeros((norb, norb), dtype=np.complex128)
-    kappa[nocc:, :nocc] = t1
-    kappa[:nocc, nocc:] = -t1.conj().T
-    return kappa
+    out = np.zeros((norb, norb), dtype=np.complex128)
+    out[nocc:, :nocc] = t1
+    out[:nocc, nocc:] = -t1.conj().T
+    return out
 
 
-def ov_unitary_from_t1(t1: np.ndarray, gauge_fix: bool = True) -> np.ndarray:
-    return unitary_from_generator(ov_generator_from_t1(t1), gauge_fix=gauge_fix)
+def ov_generator_from_params(params: np.ndarray, norb: int, nocc: int) -> np.ndarray:
+    nvirt = norb - nocc
+    ncomplex = nocc * nvirt
+    params = np.asarray(params, dtype=np.float64)
+    if params.shape != (2 * ncomplex,):
+        raise ValueError("wrong OV parameter vector size")
+    z = params[:ncomplex].reshape(nvirt, nocc) + 1j * params[ncomplex:].reshape(nvirt, nocc)
+    out = np.zeros((norb, norb), dtype=np.complex128)
+    out[nocc:, :nocc] = z
+    out[:nocc, nocc:] = -z.conj().T
+    return out
+
+
+def ov_params_from_t1(t1: np.ndarray) -> np.ndarray:
+    t1 = np.asarray(t1, dtype=np.complex128)
+    return np.concatenate([t1.real.reshape(-1), t1.imag.reshape(-1)])
+
+
+def orbital_rotation_from_ov_params(
+    params: np.ndarray,
+    norb: int,
+    nocc: int,
+    gauge_fix: bool = True,
+) -> np.ndarray:
+    return unitary_from_generator(ov_generator_from_params(params, norb, nocc), gauge_fix=gauge_fix)
 
 
 def _slater_transform_matrix(u: np.ndarray, norb: int, nocc: int) -> np.ndarray:
@@ -67,8 +90,6 @@ def apply_orbital_rotation(
 ) -> np.ndarray:
     arr = np.array(vec, dtype=np.complex128, copy=copy)
     mat = reshape_state(arr, norb, nelec)
-    nalpha, nbeta = nelec
-    ta = _slater_transform_matrix(orbital_rotation, norb, nalpha)
-    tb = _slater_transform_matrix(orbital_rotation, norb, nbeta)
-    rotated = ta @ mat @ tb.T
-    return flatten_state(rotated)
+    ta = _slater_transform_matrix(orbital_rotation, norb, nelec[0])
+    tb = _slater_transform_matrix(orbital_rotation, norb, nelec[1])
+    return flatten_state(ta @ mat @ tb.T)
