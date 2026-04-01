@@ -43,14 +43,6 @@ def pair_params_from_t2(t2: np.ndarray) -> np.ndarray:
     return pair
 
 
-def default_ov_kick(nocc: int, nvirt: int, magnitude: float = 0.1) -> np.ndarray:
-    out = np.zeros((2 * nocc * nvirt,), dtype=np.float64)
-    if nocc == 0 or nvirt == 0 or magnitude == 0.0:
-        return out
-    out[0] = magnitude
-    return out
-
-
 def ucj_seed_parameters(
     t2: np.ndarray,
     *,
@@ -58,7 +50,6 @@ def ucj_seed_parameters(
     n_layers: int = 1,
     pair_scale: float = 1.0,
     ov_scale: float = 1.0,
-    ov_kick: float = 0.1,
 ) -> np.ndarray:
     t2 = np.asarray(t2, dtype=np.float64)
     if t2.ndim != 4:
@@ -73,12 +64,9 @@ def ucj_seed_parameters(
     )
 
     if t1 is None:
-        ov_params = default_ov_kick(nocc, nvirt, magnitude=ov_kick)
+        ov_params = np.zeros(2 * nocc * nvirt, dtype=np.float64)
     else:
-        t1 = np.asarray(t1, dtype=np.complex128)
-        ov_params = ov_scale * ov_params_from_t1(t1)
-        if np.max(np.abs(ov_params)) < 1e-12:
-            ov_params = default_ov_kick(nocc, nvirt, magnitude=ov_kick)
+        ov_params = ov_scale * ov_params_from_t1(np.asarray(t1, dtype=np.complex128))
 
     npl = n_layer_params_spin_restricted(norb, nocc)
     x0 = np.zeros(n_layers * npl, dtype=np.float64)
@@ -101,7 +89,6 @@ def ucj_from_t_amplitudes(
     n_layers: int = 1,
     pair_scale: float = 1.0,
     ov_scale: float = 1.0,
-    ov_kick: float = 0.1,
 ):
     t2 = np.asarray(t2, dtype=np.float64)
     nocc = t2.shape[0]
@@ -112,7 +99,6 @@ def ucj_from_t_amplitudes(
         n_layers=n_layers,
         pair_scale=pair_scale,
         ov_scale=ov_scale,
-        ov_kick=ov_kick,
     )
     return ansatz_from_parameters_spin_restricted(
         x0,
