@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import itertools
 import math
 
 import numpy as np
+from pyscf.fci import cistring
 
 
 def occ_rows(norb: int, nocc: int) -> np.ndarray:
@@ -11,7 +11,7 @@ def occ_rows(norb: int, nocc: int) -> np.ndarray:
         raise ValueError("invalid occupation number")
     if nocc == 0:
         return np.zeros((1, 0), dtype=np.uintp)
-    return np.asarray(list(itertools.combinations(range(norb), nocc)), dtype=np.uintp)
+    return np.asarray(cistring.gen_occslst(range(norb), nocc), dtype=np.uintp)
 
 
 def sector_dim(norb: int, nocc: int) -> int:
