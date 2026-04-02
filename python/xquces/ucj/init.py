@@ -9,6 +9,8 @@ import ffsim
 from xquces.orbitals import canonicalize_unitary
 from xquces.ucj.model import SpinBalancedSpec, SpinRestrictedSpec, UCJAnsatz, UCJLayer
 from xquces.ucj.parameterization import (
+    GaugeFixedUCJSpinBalancedParameterization,
+    GaugeFixedUCJSpinRestrictedParameterization,
     UCJSpinBalancedParameterization,
     UCJSpinRestrictedParameterization,
 )
@@ -167,6 +169,57 @@ class UCJBalancedDFSeed:
 
 
 @dataclass(frozen=True)
+class GaugeFixedUCJBalancedDFSeed:
+    t2: np.ndarray
+    t1: np.ndarray | None = None
+    n_reps: int | None = None
+    tol: float = 1e-8
+    optimize: bool = False
+    method: str = "L-BFGS-B"
+    callback: object = None
+    options: dict | None = None
+    regularization: float = 0.0
+    multi_stage_start: int | None = None
+    multi_stage_step: int | None = None
+
+    def build_ansatz(self) -> UCJAnsatz:
+        ansatz = UCJBalancedDFSeed(
+            t2=self.t2,
+            t1=None,
+            n_reps=self.n_reps,
+            tol=self.tol,
+            optimize=self.optimize,
+            method=self.method,
+            callback=self.callback,
+            options=self.options,
+            regularization=self.regularization,
+            multi_stage_start=self.multi_stage_start,
+            multi_stage_step=self.multi_stage_step,
+        ).build_ansatz()
+
+        final_orbital_rotation = None
+        if self.t1 is not None:
+            final_orbital_rotation = _orbital_rotation_from_t1_amplitudes(self.t1)
+
+        return UCJAnsatz(
+            layers=ansatz.layers,
+            final_orbital_rotation=final_orbital_rotation,
+        )
+
+    def build_parameters(self) -> tuple[UCJAnsatz, GaugeFixedUCJSpinBalancedParameterization, np.ndarray]:
+        ansatz = self.build_ansatz()
+        nocc = np.asarray(self.t2).shape[0]
+        param = GaugeFixedUCJSpinBalancedParameterization(
+            norb=ansatz.norb,
+            nocc=nocc,
+            n_layers=ansatz.n_layers,
+            with_final_orbital_rotation=ansatz.final_orbital_rotation is not None,
+        )
+        x0 = param.parameters_from_ansatz(ansatz)
+        return ansatz, param, x0
+
+
+@dataclass(frozen=True)
 class UCJRestrictedHeuristicSeed:
     t2: np.ndarray
     t1: np.ndarray | None = None
@@ -252,6 +305,49 @@ class UCJRestrictedProjectedDFSeed:
         ansatz = self.build_ansatz()
         param = UCJSpinRestrictedParameterization(
             norb=ansatz.norb,
+            n_layers=ansatz.n_layers,
+            with_final_orbital_rotation=ansatz.final_orbital_rotation is not None,
+        )
+        x0 = param.parameters_from_ansatz(ansatz)
+        return ansatz, param, x0
+
+
+@dataclass(frozen=True)
+class GaugeFixedUCJRestrictedProjectedDFSeed:
+    t2: np.ndarray
+    t1: np.ndarray | None = None
+    n_reps: int | None = None
+    tol: float = 1e-8
+    optimize: bool = False
+    method: str = "L-BFGS-B"
+    callback: object = None
+    options: dict | None = None
+    regularization: float = 0.0
+    multi_stage_start: int | None = None
+    multi_stage_step: int | None = None
+
+    def build_ansatz(self) -> UCJAnsatz:
+        balanced = GaugeFixedUCJBalancedDFSeed(
+            t2=self.t2,
+            t1=self.t1,
+            n_reps=self.n_reps,
+            tol=self.tol,
+            optimize=self.optimize,
+            method=self.method,
+            callback=self.callback,
+            options=self.options,
+            regularization=self.regularization,
+            multi_stage_start=self.multi_stage_start,
+            multi_stage_step=self.multi_stage_step,
+        ).build_ansatz()
+        return project_spin_balanced_to_spin_restricted(balanced)
+
+    def build_parameters(self) -> tuple[UCJAnsatz, GaugeFixedUCJSpinRestrictedParameterization, np.ndarray]:
+        ansatz = self.build_ansatz()
+        nocc = np.asarray(self.t2).shape[0]
+        param = GaugeFixedUCJSpinRestrictedParameterization(
+            norb=ansatz.norb,
+            nocc=nocc,
             n_layers=ansatz.n_layers,
             with_final_orbital_rotation=ansatz.final_orbital_rotation is not None,
         )

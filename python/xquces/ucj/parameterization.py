@@ -6,11 +6,7 @@ from typing import Callable
 
 import numpy as np
 
-from xquces.orbitals import canonicalize_unitary
-from xquces.ucj._unitary import (
-    AntiHermitianUnitaryChart,
-    OccupiedVirtualUnitaryChart,
-)
+from xquces.ucj._unitary import AntiHermitianUnitaryChart, OccupiedVirtualUnitaryChart
 from xquces.ucj.model import SpinBalancedSpec, SpinRestrictedSpec, UCJAnsatz, UCJLayer
 
 
@@ -75,33 +71,9 @@ def _canonicalize_internal_unitary(u: np.ndarray, tol: float = 1e-12) -> np.ndar
 
 
 @dataclass(frozen=True)
-class _GaugeReducedUCJMap:
+class _InternalOrbitalGaugeMap:
     norb: int
     n_layers: int
-    same_spin_pairs: list[tuple[int, int]]
-    mixed_spin_pairs: list[tuple[int, int]]
-
-    @staticmethod
-    def _build_gauge_basis(
-        norb: int,
-        pairs: list[tuple[int, int]],
-        *,
-        diag_factor: bool,
-    ) -> tuple[np.ndarray, int]:
-        n_pairs = len(pairs)
-        if n_pairs == 0:
-            return np.zeros((0, 0), dtype=np.float64), 0
-        a = np.zeros((n_pairs, norb), dtype=np.float64)
-        for k, (p, q) in enumerate(pairs):
-            if p == q and diag_factor:
-                a[k, p] = 2.0
-            else:
-                a[k, p] += 1.0
-                a[k, q] += 1.0
-        u, s, _ = np.linalg.svd(a, full_matrices=True)
-        rank = int(np.sum(s > 1e-10))
-        v_indep = u[:, rank:]
-        return v_indep, v_indep.shape[1]
 
     @property
     def n_orb_rot_full(self) -> int:
@@ -120,104 +92,38 @@ class _GaugeReducedUCJMap:
         return len(self.kept_indices)
 
     @property
-    def v_aa(self) -> np.ndarray:
-        return self._build_gauge_basis(
-            self.norb,
-            self.same_spin_pairs,
-            diag_factor=False,
-        )[0]
-
-    @property
-    def n_indep_aa(self) -> int:
-        return self._build_gauge_basis(
-            self.norb,
-            self.same_spin_pairs,
-            diag_factor=False,
-        )[1]
-
-    @property
-    def v_ab(self) -> np.ndarray:
-        return self._build_gauge_basis(
-            self.norb,
-            self.mixed_spin_pairs,
-            diag_factor=True,
-        )[0]
-
-    @property
-    def n_indep_ab(self) -> int:
-        return self._build_gauge_basis(
-            self.norb,
-            self.mixed_spin_pairs,
-            diag_factor=True,
-        )[1]
-
-    @property
-    def n_full_per_layer(self) -> int:
-        return self.n_orb_rot_full + len(self.same_spin_pairs) + len(self.mixed_spin_pairs)
-
-    @property
-    def n_reduced_per_layer(self) -> int:
-        return self.n_orb_rot_reduced + self.n_indep_aa + self.n_indep_ab
-
-    @property
     def n_full(self) -> int:
-        return self.n_layers * self.n_full_per_layer
+        return self.n_layers * self.n_orb_rot_full
 
     @property
     def n_reduced(self) -> int:
-        return self.n_layers * self.n_reduced_per_layer
+        return self.n_layers * self.n_orb_rot_reduced
 
     def reduced_to_full(self, x_reduced: np.ndarray) -> np.ndarray:
         x_reduced = np.asarray(x_reduced, dtype=np.float64)
-        x_full = np.zeros(self.n_full, dtype=np.float64)
+        out = np.zeros(self.n_full, dtype=np.float64)
         ir = 0
         iff = 0
         for _ in range(self.n_layers):
-            x_full_orb = np.zeros(self.n_orb_rot_full, dtype=np.float64)
-            x_full_orb[self.kept_indices] = x_reduced[ir : ir + self.n_orb_rot_reduced]
-            x_full[iff : iff + self.n_orb_rot_full] = x_full_orb
+            block = np.zeros(self.n_orb_rot_full, dtype=np.float64)
+            block[self.kept_indices] = x_reduced[ir : ir + self.n_orb_rot_reduced]
+            out[iff : iff + self.n_orb_rot_full] = block
             ir += self.n_orb_rot_reduced
             iff += self.n_orb_rot_full
-
-            n = len(self.same_spin_pairs)
-            if self.n_indep_aa > 0:
-                x_full[iff : iff + n] = self.v_aa @ x_reduced[ir : ir + self.n_indep_aa]
-            ir += self.n_indep_aa
-            iff += n
-
-            n = len(self.mixed_spin_pairs)
-            if self.n_indep_ab > 0:
-                x_full[iff : iff + n] = self.v_ab @ x_reduced[ir : ir + self.n_indep_ab]
-            ir += self.n_indep_ab
-            iff += n
-
-        return x_full
+        return out
 
     def full_to_reduced(self, x_full: np.ndarray) -> np.ndarray:
         x_full = np.asarray(x_full, dtype=np.float64)
-        x_reduced = np.empty(self.n_reduced, dtype=np.float64)
+        out = np.empty(self.n_reduced, dtype=np.float64)
         ir = 0
         iff = 0
         for _ in range(self.n_layers):
-            x_reduced[ir : ir + self.n_orb_rot_reduced] = x_full[
+            out[ir : ir + self.n_orb_rot_reduced] = x_full[
                 iff : iff + self.n_orb_rot_full
             ][self.kept_indices]
             ir += self.n_orb_rot_reduced
             iff += self.n_orb_rot_full
-
-            n = len(self.same_spin_pairs)
-            if self.n_indep_aa > 0:
-                x_reduced[ir : ir + self.n_indep_aa] = self.v_aa.T @ x_full[iff : iff + n]
-            ir += self.n_indep_aa
-            iff += n
-
-            n = len(self.mixed_spin_pairs)
-            if self.n_indep_ab > 0:
-                x_reduced[ir : ir + self.n_indep_ab] = self.v_ab.T @ x_full[iff : iff + n]
-            ir += self.n_indep_ab
-            iff += n
-
-        return x_reduced
+        return out
 
 
 @dataclass(frozen=True)
@@ -520,17 +426,32 @@ class GaugeFixedUCJSpinRestrictedParameterization:
         return _validate_pairs(self.interaction_pairs, self.norb, allow_diagonal=False)
 
     @property
-    def gauge_map(self) -> _GaugeReducedUCJMap:
-        return _GaugeReducedUCJMap(
-            norb=self.norb,
-            n_layers=self.n_layers,
-            same_spin_pairs=self.pair_indices,
-            mixed_spin_pairs=[],
-        )
+    def internal_orbital_gauge_map(self) -> _InternalOrbitalGaugeMap:
+        return _InternalOrbitalGaugeMap(self.norb, self.n_layers)
 
     @property
     def final_orbital_chart(self) -> OccupiedVirtualUnitaryChart:
         return OccupiedVirtualUnitaryChart(self.nocc, self.nvirt)
+
+    @property
+    def n_internal_orbital_rotation_params(self) -> int:
+        return self.internal_orbital_gauge_map.n_reduced
+
+    @property
+    def n_diagonal_params(self) -> int:
+        return self.norb
+
+    @property
+    def n_pair_params(self) -> int:
+        return len(self.pair_indices)
+
+    @property
+    def n_layer_params(self) -> int:
+        return (
+            self.n_internal_orbital_rotation_params // self.n_layers
+            + self.n_diagonal_params
+            + self.n_pair_params
+        )
 
     @property
     def n_final_orbital_rotation_params(self) -> int:
@@ -538,41 +459,45 @@ class GaugeFixedUCJSpinRestrictedParameterization:
 
     @property
     def n_params(self) -> int:
-        return self.gauge_map.n_reduced + self.n_layers * self.norb + self.n_final_orbital_rotation_params
+        return (
+            self.n_internal_orbital_rotation_params
+            + self.n_layers * (self.n_diagonal_params + self.n_pair_params)
+            + self.n_final_orbital_rotation_params
+        )
 
     def ansatz_from_parameters(self, params: np.ndarray) -> UCJAnsatz:
         params = np.asarray(params, dtype=np.float64)
         if params.shape != (self.n_params,):
             raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
 
-        n_ucj = self.gauge_map.n_reduced
-        x_ucj = params[:n_ucj]
-        x_rest = params[n_ucj:]
+        orb_map = self.internal_orbital_gauge_map
+        n_orb_red = orb_map.n_reduced
+        x_orb_red = params[:n_orb_red]
+        x_rest = params[n_orb_red:]
+        x_orb_full = orb_map.reduced_to_full(x_orb_red)
 
-        x_full = self.gauge_map.reduced_to_full(x_ucj)
-
-        idx_full = 0
-        idx_d = 0
+        idx_orb = 0
+        idx_rest = 0
         layers: list[UCJLayer] = []
 
         for _ in range(self.n_layers):
-            n = self.gauge_map.n_orb_rot_full
+            n = orb_map.n_orb_rot_full
             u = self.orbital_chart.unitary_from_parameters(
-                x_full[idx_full : idx_full + n],
+                x_orb_full[idx_orb : idx_orb + n],
                 self.norb,
             )
-            idx_full += n
+            idx_orb += n
 
-            n = len(self.pair_indices)
+            d = np.array(x_rest[idx_rest : idx_rest + self.norb], copy=True)
+            idx_rest += self.norb
+
+            n = self.n_pair_params
             p = _symmetric_matrix_from_values(
-                x_full[idx_full : idx_full + n],
+                x_rest[idx_rest : idx_rest + n],
                 self.norb,
                 self.pair_indices,
             )
-            idx_full += n
-
-            d = np.array(x_rest[idx_d : idx_d + self.norb], copy=True)
-            idx_d += self.norb
+            idx_rest += n
 
             layers.append(
                 UCJLayer(
@@ -583,8 +508,9 @@ class GaugeFixedUCJSpinRestrictedParameterization:
 
         final_orbital_rotation = None
         if self.with_final_orbital_rotation:
+            n = self.n_final_orbital_rotation_params
             final_orbital_rotation = self.final_orbital_chart.unitary_from_parameters(
-                params[-self.n_final_orbital_rotation_params :]
+                params[-n:]
             )
 
         return UCJAnsatz(
@@ -602,38 +528,43 @@ class GaugeFixedUCJSpinRestrictedParameterization:
         if self.with_final_orbital_rotation != (ansatz.final_orbital_rotation is not None):
             raise ValueError("final orbital rotation presence does not match parameterization")
 
-        x_full = np.zeros(self.gauge_map.n_full, dtype=np.float64)
-        x_d = np.zeros(self.n_layers * self.norb, dtype=np.float64)
+        orb_map = self.internal_orbital_gauge_map
+        x_orb_full = np.zeros(orb_map.n_full, dtype=np.float64)
+        x_rest = np.zeros(
+            self.n_layers * (self.n_diagonal_params + self.n_pair_params),
+            dtype=np.float64,
+        )
 
-        idx_full = 0
-        idx_d = 0
+        idx_orb = 0
+        idx_rest = 0
 
         for layer in ansatz.layers:
             d = layer.diagonal
 
-            n = self.gauge_map.n_orb_rot_full
-            x_full[idx_full : idx_full + n] = self.orbital_chart.parameters_from_unitary(
+            n = orb_map.n_orb_rot_full
+            x_orb_full[idx_orb : idx_orb + n] = self.orbital_chart.parameters_from_unitary(
                 _canonicalize_internal_unitary(layer.orbital_rotation)
             )
-            idx_full += n
+            idx_orb += n
 
-            n = len(self.pair_indices)
-            x_full[idx_full : idx_full + n] = np.asarray(
-                [d.pair_params[p, q] for p, q in self.pair_indices],
-                dtype=np.float64,
-            )
-            idx_full += n
+            x_rest[idx_rest : idx_rest + self.norb] = np.asarray(d.double_params, dtype=np.float64)
+            idx_rest += self.norb
 
-            x_d[idx_d : idx_d + self.norb] = np.asarray(d.double_params, dtype=np.float64)
-            idx_d += self.norb
+            n = self.n_pair_params
+            if n:
+                x_rest[idx_rest : idx_rest + n] = np.asarray(
+                    [d.pair_params[p, q] for p, q in self.pair_indices],
+                    dtype=np.float64,
+                )
+                idx_rest += n
 
-        x_ucj = self.gauge_map.full_to_reduced(x_full)
+        x_orb_red = orb_map.full_to_reduced(x_orb_full)
 
         if not self.with_final_orbital_rotation:
-            return np.concatenate([x_ucj, x_d])
+            return np.concatenate([x_orb_red, x_rest])
 
         x_final = self.final_orbital_chart.parameters_from_unitary(ansatz.final_orbital_rotation)
-        return np.concatenate([x_ucj, x_d, x_final])
+        return np.concatenate([x_orb_red, x_rest, x_final])
 
     def params_to_vec(
         self,
@@ -661,10 +592,8 @@ class GaugeFixedUCJSpinBalancedParameterization:
     def __post_init__(self):
         if not (0 <= self.nocc <= self.norb):
             raise ValueError("nocc must satisfy 0 <= nocc <= norb")
-        if self.same_spin_interaction_pairs is not None:
-            _validate_pairs(self.same_spin_interaction_pairs, self.norb, allow_diagonal=False)
-        if self.mixed_spin_interaction_pairs is not None:
-            _validate_pairs(self.mixed_spin_interaction_pairs, self.norb, allow_diagonal=True)
+        _validate_pairs(self.same_spin_interaction_pairs, self.norb, allow_diagonal=True)
+        _validate_pairs(self.mixed_spin_interaction_pairs, self.norb, allow_diagonal=True)
 
     @property
     def nvirt(self) -> int:
@@ -672,28 +601,39 @@ class GaugeFixedUCJSpinBalancedParameterization:
 
     @property
     def same_spin_indices(self) -> list[tuple[int, int]]:
-        if self.same_spin_interaction_pairs is None:
-            return _default_upper_indices(self.norb)
-        return _validate_pairs(self.same_spin_interaction_pairs, self.norb, allow_diagonal=False)
+        return _validate_pairs(self.same_spin_interaction_pairs, self.norb, allow_diagonal=True)
 
     @property
     def mixed_spin_indices(self) -> list[tuple[int, int]]:
-        if self.mixed_spin_interaction_pairs is None:
-            return _default_triu_indices(self.norb)
         return _validate_pairs(self.mixed_spin_interaction_pairs, self.norb, allow_diagonal=True)
 
     @property
-    def gauge_map(self) -> _GaugeReducedUCJMap:
-        return _GaugeReducedUCJMap(
-            norb=self.norb,
-            n_layers=self.n_layers,
-            same_spin_pairs=self.same_spin_indices,
-            mixed_spin_pairs=self.mixed_spin_indices,
-        )
+    def internal_orbital_gauge_map(self) -> _InternalOrbitalGaugeMap:
+        return _InternalOrbitalGaugeMap(self.norb, self.n_layers)
 
     @property
     def final_orbital_chart(self) -> OccupiedVirtualUnitaryChart:
         return OccupiedVirtualUnitaryChart(self.nocc, self.nvirt)
+
+    @property
+    def n_internal_orbital_rotation_params(self) -> int:
+        return self.internal_orbital_gauge_map.n_reduced
+
+    @property
+    def n_same_spin_params(self) -> int:
+        return len(self.same_spin_indices)
+
+    @property
+    def n_mixed_spin_params(self) -> int:
+        return len(self.mixed_spin_indices)
+
+    @property
+    def n_layer_params(self) -> int:
+        return (
+            self.n_internal_orbital_rotation_params // self.n_layers
+            + self.n_same_spin_params
+            + self.n_mixed_spin_params
+        )
 
     @property
     def n_final_orbital_rotation_params(self) -> int:
@@ -701,43 +641,50 @@ class GaugeFixedUCJSpinBalancedParameterization:
 
     @property
     def n_params(self) -> int:
-        return self.gauge_map.n_reduced + self.n_final_orbital_rotation_params
+        return (
+            self.n_internal_orbital_rotation_params
+            + self.n_layers * (self.n_same_spin_params + self.n_mixed_spin_params)
+            + self.n_final_orbital_rotation_params
+        )
 
     def ansatz_from_parameters(self, params: np.ndarray) -> UCJAnsatz:
         params = np.asarray(params, dtype=np.float64)
         if params.shape != (self.n_params,):
             raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
 
-        n_ucj = self.gauge_map.n_reduced
-        x_ucj = params[:n_ucj]
-        x_full = self.gauge_map.reduced_to_full(x_ucj)
+        orb_map = self.internal_orbital_gauge_map
+        n_orb_red = orb_map.n_reduced
+        x_orb_red = params[:n_orb_red]
+        x_rest = params[n_orb_red:]
+        x_orb_full = orb_map.reduced_to_full(x_orb_red)
 
-        idx = 0
+        idx_orb = 0
+        idx_rest = 0
         layers: list[UCJLayer] = []
 
         for _ in range(self.n_layers):
-            n = self.gauge_map.n_orb_rot_full
+            n = orb_map.n_orb_rot_full
             u = self.orbital_chart.unitary_from_parameters(
-                x_full[idx : idx + n],
+                x_orb_full[idx_orb : idx_orb + n],
                 self.norb,
             )
-            idx += n
+            idx_orb += n
 
-            n = len(self.same_spin_indices)
+            n = self.n_same_spin_params
             j0 = _symmetric_matrix_from_values(
-                x_full[idx : idx + n],
+                x_rest[idx_rest : idx_rest + n],
                 self.norb,
                 self.same_spin_indices,
             )
-            idx += n
+            idx_rest += n
 
-            n = len(self.mixed_spin_indices)
+            n = self.n_mixed_spin_params
             j1 = _symmetric_matrix_from_values(
-                x_full[idx : idx + n],
+                x_rest[idx_rest : idx_rest + n],
                 self.norb,
                 self.mixed_spin_indices,
             )
-            idx += n
+            idx_rest += n
 
             layers.append(
                 UCJLayer(
@@ -751,8 +698,9 @@ class GaugeFixedUCJSpinBalancedParameterization:
 
         final_orbital_rotation = None
         if self.with_final_orbital_rotation:
+            n = self.n_final_orbital_rotation_params
             final_orbital_rotation = self.final_orbital_chart.unitary_from_parameters(
-                params[-self.n_final_orbital_rotation_params :]
+                params[-n:]
             )
 
         return UCJAnsatz(
@@ -770,39 +718,48 @@ class GaugeFixedUCJSpinBalancedParameterization:
         if self.with_final_orbital_rotation != (ansatz.final_orbital_rotation is not None):
             raise ValueError("final orbital rotation presence does not match parameterization")
 
-        x_full = np.zeros(self.gauge_map.n_full, dtype=np.float64)
-        idx = 0
+        orb_map = self.internal_orbital_gauge_map
+        x_orb_full = np.zeros(orb_map.n_full, dtype=np.float64)
+        x_rest = np.zeros(
+            self.n_layers * (self.n_same_spin_params + self.n_mixed_spin_params),
+            dtype=np.float64,
+        )
+
+        idx_orb = 0
+        idx_rest = 0
 
         for layer in ansatz.layers:
             d = layer.diagonal
 
-            n = self.gauge_map.n_orb_rot_full
-            x_full[idx : idx + n] = self.orbital_chart.parameters_from_unitary(
+            n = orb_map.n_orb_rot_full
+            x_orb_full[idx_orb : idx_orb + n] = self.orbital_chart.parameters_from_unitary(
                 _canonicalize_internal_unitary(layer.orbital_rotation)
             )
-            idx += n
+            idx_orb += n
 
-            n = len(self.same_spin_indices)
-            x_full[idx : idx + n] = np.asarray(
-                [d.same_spin_params[p, q] for p, q in self.same_spin_indices],
-                dtype=np.float64,
-            )
-            idx += n
+            n = self.n_same_spin_params
+            if n:
+                x_rest[idx_rest : idx_rest + n] = np.asarray(
+                    [d.same_spin_params[p, q] for p, q in self.same_spin_indices],
+                    dtype=np.float64,
+                )
+                idx_rest += n
 
-            n = len(self.mixed_spin_indices)
-            x_full[idx : idx + n] = np.asarray(
-                [d.mixed_spin_params[p, q] for p, q in self.mixed_spin_indices],
-                dtype=np.float64,
-            )
-            idx += n
+            n = self.n_mixed_spin_params
+            if n:
+                x_rest[idx_rest : idx_rest + n] = np.asarray(
+                    [d.mixed_spin_params[p, q] for p, q in self.mixed_spin_indices],
+                    dtype=np.float64,
+                )
+                idx_rest += n
 
-        x_ucj = self.gauge_map.full_to_reduced(x_full)
+        x_orb_red = orb_map.full_to_reduced(x_orb_full)
 
         if not self.with_final_orbital_rotation:
-            return x_ucj
+            return np.concatenate([x_orb_red, x_rest])
 
         x_final = self.final_orbital_chart.parameters_from_unitary(ansatz.final_orbital_rotation)
-        return np.concatenate([x_ucj, x_final])
+        return np.concatenate([x_orb_red, x_rest, x_final])
 
     def params_to_vec(
         self,
