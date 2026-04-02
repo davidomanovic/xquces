@@ -93,7 +93,7 @@ class UCJAnsatz:
             if type(layer.diagonal) is not layer_type:
                 raise ValueError("all layers must use the same diagonal spec type")
         if self.final_orbital_rotation is not None:
-            u = np.asarray(self.orbital_rotation, dtype=np.complex128)
+            u = np.asarray(self.final_orbital_rotation, dtype=np.complex128)
             if u.shape != (norb, norb):
                 raise ValueError("final_orbital_rotation has wrong shape")
             if not np.allclose(u.conj().T @ u, np.eye(norb), atol=1e-10):
