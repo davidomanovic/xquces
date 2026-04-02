@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import scipy.linalg
-
-from xquces.basis import flatten_state, occ_rows, reshape_state
+import ffsim
 
 
 def canonicalize_unitary(u: np.ndarray, tol: float = 1e-12) -> np.ndarray:
@@ -68,17 +67,10 @@ def orbital_rotation_from_ov_params(
     nocc: int,
     gauge_fix: bool = True,
 ) -> np.ndarray:
-    return unitary_from_generator(ov_generator_from_params(params, norb, nocc), gauge_fix=gauge_fix)
-
-
-def _slater_transform_matrix(u: np.ndarray, norb: int, nocc: int) -> np.ndarray:
-    occ = occ_rows(norb, nocc)
-    dim = len(occ)
-    out = np.zeros((dim, dim), dtype=np.complex128)
-    for i, bra in enumerate(occ):
-        for j, ket in enumerate(occ):
-            out[i, j] = np.linalg.det(u[np.ix_(bra, ket)])
-    return out
+    return unitary_from_generator(
+        ov_generator_from_params(params, norb, nocc),
+        gauge_fix=gauge_fix,
+    )
 
 
 def apply_orbital_rotation(
@@ -88,8 +80,10 @@ def apply_orbital_rotation(
     nelec: tuple[int, int],
     copy: bool = True,
 ) -> np.ndarray:
-    arr = np.array(vec, dtype=np.complex128, copy=copy)
-    mat = reshape_state(arr, norb, nelec)
-    ta = _slater_transform_matrix(orbital_rotation, norb, nelec[0])
-    tb = _slater_transform_matrix(orbital_rotation, norb, nelec[1])
-    return flatten_state(ta @ mat @ tb.T)
+    return ffsim.apply_orbital_rotation(
+        np.asarray(vec, dtype=np.complex128),
+        np.asarray(orbital_rotation, dtype=np.complex128),
+        norb=norb,
+        nelec=nelec,
+        copy=copy,
+    )
