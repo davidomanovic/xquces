@@ -1,22 +1,12 @@
-# QuCES: Quantum Computing for Electronic Structure
+# xquces: X-perimental quantum computing for electronic structure
 
-This is a Python library for electronic strucutre problems that can be solved with quantum computing.
+This is a Python library that containing numerous quantum computing algorithms for quantum chemistry problems; more specifically electronic structure calculations. 
 
-# Get started
+Several features are experimental and serve as points of interest in future research.
 
-1. Clone the repo into any directory
-```
-git clone https://github.com/davidomanovic/QuCES.git 
-```
+# Features:
 
-2. `cd` to the directory where you cloned it and run pip install
-```
-cd <cloned_repo_directory>
-pip install .
-```
-
-3. Import the module in Python with `import quces as qs`
-
-# Code examples
-- **Constructing the variational LUCJ circuit and running VQE**: [docs/examples/lucj_vqe.ipynb
-  ](https://github.com/davidomanovic/QuCES/blob/e64339a369c25f11e56c2176f7c904f633be6869/docs/examples/lucj_vqe.ipynb)
+### The UCJ ansatz
+- Spin-balanced parametrization
+- Spin-restricted parametrization (for singlet states)
+- Gauge-fixing and removing redundancies in parameters
