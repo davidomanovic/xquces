@@ -9,7 +9,6 @@ import numpy as np
 from xquces.ucj._unitary import (
     AntiHermitianUnitaryChart,
     GaugeFixedInternalUnitaryChart,
-    OccupiedVirtualUnitaryChart,
 )
 from xquces.ucj.model import SpinBalancedSpec, SpinRestrictedSpec, UCJAnsatz, UCJLayer
 
@@ -332,6 +331,7 @@ class GaugeFixedUCJSpinRestrictedParameterization:
     interaction_pairs: list[tuple[int, int]] | None = None
     with_final_orbital_rotation: bool = False
     internal_orbital_chart: GaugeFixedInternalUnitaryChart = field(default_factory=GaugeFixedInternalUnitaryChart)
+    final_orbital_chart: AntiHermitianUnitaryChart = field(default_factory=AntiHermitianUnitaryChart)
 
     def __post_init__(self):
         if not (0 <= self.nocc <= self.norb):
@@ -341,10 +341,6 @@ class GaugeFixedUCJSpinRestrictedParameterization:
     @property
     def nvirt(self) -> int:
         return self.norb - self.nocc
-
-    @property
-    def final_orbital_chart(self) -> OccupiedVirtualUnitaryChart:
-        return OccupiedVirtualUnitaryChart(self.nocc, self.nvirt)
 
     @property
     def pair_indices(self) -> list[tuple[int, int]]:
@@ -368,7 +364,7 @@ class GaugeFixedUCJSpinRestrictedParameterization:
 
     @property
     def n_final_orbital_rotation_params(self) -> int:
-        return self.final_orbital_chart.n_params() if self.with_final_orbital_rotation else 0
+        return self.final_orbital_chart.n_params(self.norb) if self.with_final_orbital_rotation else 0
 
     @property
     def n_params(self) -> int:
@@ -403,7 +399,10 @@ class GaugeFixedUCJSpinRestrictedParameterization:
         final_orbital_rotation = None
         if self.with_final_orbital_rotation:
             n = self.n_final_orbital_rotation_params
-            final_orbital_rotation = self.final_orbital_chart.unitary_from_parameters(params[idx : idx + n])
+            final_orbital_rotation = self.final_orbital_chart.unitary_from_parameters(
+                params[idx : idx + n],
+                self.norb,
+            )
             idx += n
         return UCJAnsatz(
             layers=tuple(layers),
@@ -465,6 +464,7 @@ class GaugeFixedUCJSpinBalancedParameterization:
     mixed_spin_interaction_pairs: list[tuple[int, int]] | None = None
     with_final_orbital_rotation: bool = False
     internal_orbital_chart: GaugeFixedInternalUnitaryChart = field(default_factory=GaugeFixedInternalUnitaryChart)
+    final_orbital_chart: AntiHermitianUnitaryChart = field(default_factory=AntiHermitianUnitaryChart)
 
     def __post_init__(self):
         if not (0 <= self.nocc <= self.norb):
@@ -475,10 +475,6 @@ class GaugeFixedUCJSpinBalancedParameterization:
     @property
     def nvirt(self) -> int:
         return self.norb - self.nocc
-
-    @property
-    def final_orbital_chart(self) -> OccupiedVirtualUnitaryChart:
-        return OccupiedVirtualUnitaryChart(self.nocc, self.nvirt)
 
     @property
     def same_spin_indices(self) -> list[tuple[int, int]]:
@@ -506,7 +502,7 @@ class GaugeFixedUCJSpinBalancedParameterization:
 
     @property
     def n_final_orbital_rotation_params(self) -> int:
-        return self.final_orbital_chart.n_params() if self.with_final_orbital_rotation else 0
+        return self.final_orbital_chart.n_params(self.norb) if self.with_final_orbital_rotation else 0
 
     @property
     def n_params(self) -> int:
@@ -542,7 +538,10 @@ class GaugeFixedUCJSpinBalancedParameterization:
         final_orbital_rotation = None
         if self.with_final_orbital_rotation:
             n = self.n_final_orbital_rotation_params
-            final_orbital_rotation = self.final_orbital_chart.unitary_from_parameters(params[idx : idx + n])
+            final_orbital_rotation = self.final_orbital_chart.unitary_from_parameters(
+                params[idx : idx + n],
+                self.norb,
+            )
             idx += n
         return UCJAnsatz(
             layers=tuple(layers),
