@@ -13,6 +13,7 @@ from xquces.ucj.parameterization import (
     GaugeFixedUCJSpinRestrictedParameterization,
     UCJSpinBalancedParameterization,
     UCJSpinRestrictedParameterization,
+    ov_params_from_unitary,
 )
 
 
@@ -183,10 +184,15 @@ class GaugeFixedUCJBalancedDFSeed:
     multi_stage_step: int | None = None
 
     def build_ansatz(self) -> UCJAnsatz:
-        ansatz = UCJBalancedDFSeed(
-            t2=self.t2,
-            t1=None,
+        ansatz, _, _ = self.build_parameters()
+        return ansatz
+
+    def build_parameters(self) -> tuple[UCJAnsatz, GaugeFixedUCJSpinBalancedParameterization, np.ndarray]:
+        stock = ffsim.UCJOpSpinBalanced.from_t_amplitudes(
+            np.asarray(self.t2, dtype=np.float64),
+            t1=None if self.t1 is None else np.asarray(self.t1, dtype=np.complex128),
             n_reps=self.n_reps,
+            interaction_pairs=None,
             tol=self.tol,
             optimize=self.optimize,
             method=self.method,
@@ -195,27 +201,62 @@ class GaugeFixedUCJBalancedDFSeed:
             regularization=self.regularization,
             multi_stage_start=self.multi_stage_start,
             multi_stage_step=self.multi_stage_step,
-        ).build_ansatz()
-
-        final_orbital_rotation = None
-        if self.t1 is not None:
-            final_orbital_rotation = _orbital_rotation_from_t1_amplitudes(self.t1)
-
-        return UCJAnsatz(
-            layers=ansatz.layers,
-            final_orbital_rotation=final_orbital_rotation,
         )
 
-    def build_parameters(self) -> tuple[UCJAnsatz, GaugeFixedUCJSpinBalancedParameterization, np.ndarray]:
-        ansatz = self.build_ansatz()
         nocc = np.asarray(self.t2).shape[0]
         param = GaugeFixedUCJSpinBalancedParameterization(
-            norb=ansatz.norb,
+            norb=stock.norb,
             nocc=nocc,
-            n_layers=ansatz.n_layers,
-            with_final_orbital_rotation=ansatz.final_orbital_rotation is not None,
+            n_layers=stock.n_reps,
+            with_final_orbital_rotation=stock.final_orbital_rotation is not None,
         )
-        x0 = param.parameters_from_ansatz(ansatz)
+
+        full_params = stock.to_parameters(
+            interaction_pairs=(param.same_spin_indices, param.mixed_spin_indices)
+        )
+
+        orb_map = param.internal_orbital_gauge_map
+        j_map = param.jastrow_gauge_map
+
+        n_orb_block = orb_map.n_orb_rot_full
+        n_same = len(param.same_spin_indices)
+        n_mixed = len(param.mixed_spin_indices)
+
+        x_orb_full = np.zeros(orb_map.n_full, dtype=np.float64)
+        x_j_full = np.zeros(j_map.n_full, dtype=np.float64)
+
+        src = 0
+        dst_orb = 0
+        dst_j = 0
+        for _ in range(stock.n_reps):
+            x_orb_full[dst_orb : dst_orb + n_orb_block] = full_params[src : src + n_orb_block]
+            src += n_orb_block
+            dst_orb += n_orb_block
+
+            if n_same:
+                x_j_full[dst_j : dst_j + n_same] = full_params[src : src + n_same]
+                src += n_same
+                dst_j += n_same
+
+            if n_mixed:
+                x_j_full[dst_j : dst_j + n_mixed] = full_params[src : src + n_mixed]
+                src += n_mixed
+                dst_j += n_mixed
+
+        if stock.final_orbital_rotation is not None:
+            x_final = ov_params_from_unitary(stock.final_orbital_rotation, nocc)
+        else:
+            x_final = np.zeros(0, dtype=np.float64)
+
+        x0 = np.concatenate(
+            [
+                orb_map.full_to_reduced(x_orb_full),
+                j_map.full_to_reduced(x_j_full),
+                x_final,
+            ]
+        )
+
+        ansatz = param.ansatz_from_parameters(x0)
         return ansatz, param, x0
 
 
