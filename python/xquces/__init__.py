@@ -7,6 +7,8 @@ from xquces.gcr import (
     GCRSpinRestrictedParameterization,
     gcr_from_ucj_ansatz,
 )
+from xquces.gcr.init import GaugeFixedGCRBalancedDFSeed
+
 from xquces.ucj._unitary import (
     AntiHermitianUnitaryChart,
     antihermitian_from_parameters,

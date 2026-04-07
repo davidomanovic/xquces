@@ -3,6 +3,7 @@ from xquces.gcr.parameterization import (
     GCRSpinBalancedParameterization,
     GCRSpinRestrictedParameterization,
 )
+from xquces.gcr.init import GaugeFixedGCRBalancedDFSeed
 
 __all__ = [
     "GCRAnsatz",

@@ -357,62 +357,14 @@ class GCRSpinBalancedParameterization:
         return out
 
     def parameters_from_ucj_ansatz(self, ansatz: UCJAnsatz) -> np.ndarray:
-        from xquces.ucj.parameterization import GaugeFixedUCJSpinBalancedParameterization
-
         if ansatz.norb != self.norb:
             raise ValueError("ansatz norb does not match parameterization")
         if ansatz.n_layers != 1:
             raise ValueError("only a single-layer UCJ ansatz can be mapped exactly to GCR")
         if not ansatz.is_spin_balanced:
             raise TypeError("expected a spin-balanced ansatz")
-
-        ucj_param = GaugeFixedUCJSpinBalancedParameterization(
-            norb=self.norb,
-            n_layers=1,
-            same_spin_interaction_pairs=self.same_spin_indices,
-            mixed_spin_interaction_pairs=self.mixed_spin_indices,
-            with_final_orbital_rotation=ansatz.final_orbital_rotation is not None,
-            nocc=self.nocc,
-        )
-
-        x_ucj = ucj_param.parameters_from_ansatz(ansatz)
-        ucj_gf = ucj_param.ansatz_from_parameters(x_ucj)
-
-        layer = ucj_gf.layers[0]
-        d = layer.diagonal
-
-        u = np.asarray(layer.orbital_rotation, dtype=np.complex128)
-        f = (
-            np.asarray(ucj_gf.final_orbital_rotation, dtype=np.complex128)
-            if ucj_gf.final_orbital_rotation is not None
-            else np.eye(self.norb, dtype=np.complex128)
-        )
-
-        left_full = f @ u
-        right_full = u.conj().T
-
-        left_gf, right_eff = _gauge_fix_left_and_transfer_right(left_full, right_full)
-
-        same_full = np.asarray(
-            [d.same_spin_params[p, q] for p, q in self.same_spin_indices],
-            dtype=np.float64,
-        )
-        mixed_full = np.asarray(
-            [d.mixed_spin_params[p, q] for p, q in self.mixed_spin_indices],
-            dtype=np.float64,
-        )
-        x_j = self.jastrow_gauge_map.full_to_reduced(
-            np.concatenate([same_full, mixed_full])
-        )
-
-        x_left = self.left_orbital_chart.parameters_from_unitary(left_gf)
-        x_right = _stable_ov_params_from_unitary_subspace(right_eff, self.nocc)
-
-        out = np.concatenate([x_left, x_j, x_right])
-        if out.shape != (self.n_params,):
-            raise RuntimeError(f"internal error: produced {out.shape}, expected {(self.n_params,)}")
-        return out
-
+        return self.parameters_from_ansatz(gcr_from_ucj_ansatz(ansatz))
+        
     def params_to_vec(
         self,
         reference_vec: np.ndarray,
