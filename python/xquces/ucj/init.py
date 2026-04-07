@@ -15,6 +15,52 @@ from xquces.ucj.parameterization import (
     ov_params_from_unitary,
 )
 
+def _canonicalize_real_columns(mat: np.ndarray, tol: float = 1e-12) -> np.ndarray:
+    mat = np.array(mat, dtype=np.float64, copy=True)
+    for j in range(mat.shape[1]):
+        col = mat[:, j]
+        idx = int(np.argmax(np.abs(col)))
+        val = col[idx]
+        if abs(val) > tol and val < 0:
+            mat[:, j] *= -1.0
+    return mat
+
+
+def _canonicalize_df_term(
+    diag_coulomb_mat: np.ndarray,
+    orbital_rotation: np.ndarray,
+    tol: float = 1e-12,
+) -> tuple[np.ndarray, np.ndarray]:
+    z = np.asarray(diag_coulomb_mat, dtype=np.float64)
+    z = 0.5 * (z + z.T)
+
+    eigvals, eigvecs = scipy.linalg.eigh(z)
+    order = np.array(
+        sorted(
+            range(len(eigvals)),
+            key=lambda i: (-abs(float(eigvals[i])), -float(eigvals[i]), i),
+        ),
+        dtype=int,
+    )
+    eigvals = eigvals[order]
+    eigvecs = eigvecs[:, order]
+    eigvecs = _canonicalize_real_columns(eigvecs, tol=tol)
+
+    u = canonicalize_unitary(np.asarray(orbital_rotation, dtype=np.complex128) @ eigvecs)
+    z_canonical = np.diag(eigvals.astype(np.float64))
+    return z_canonical, u
+
+
+def _df_term_sort_key(diag_coulomb_mat: np.ndarray, orbital_rotation: np.ndarray):
+    diag = np.diag(np.asarray(diag_coulomb_mat, dtype=np.float64))
+    u = np.asarray(orbital_rotation, dtype=np.complex128)
+    return (
+        -float(np.linalg.norm(diag)),
+        tuple(np.round(-np.abs(diag), 14)),
+        tuple(np.round(-diag, 14)),
+        tuple(np.round(u.real.ravel(), 14)),
+        tuple(np.round(u.imag.ravel(), 14)),
+    )
 
 def _orbital_rotation_from_t1_amplitudes(t1: np.ndarray) -> np.ndarray:
     t1 = np.asarray(t1, dtype=np.complex128)
@@ -107,10 +153,12 @@ class UCJBalancedDFSeed:
         nocc, _, nvirt, _ = t2.shape
         norb = nocc + nvirt
 
+        max_terms = self.n_reps if self.optimize else None
+
         diag_coulomb_mats, orbital_rotations = ffsim.linalg.double_factorized_t2(
             t2,
             tol=self.tol,
-            max_terms=self.n_reps,
+            max_terms=max_terms,
             optimize=self.optimize,
             method=self.method,
             callback=self.callback,
@@ -122,29 +170,36 @@ class UCJBalancedDFSeed:
             return_optimize_result=False,
         )
 
-        n_terms = len(diag_coulomb_mats)
-        if self.n_reps is not None and n_terms < self.n_reps:
-            pad = self.n_reps - n_terms
-            diag_coulomb_mats = np.concatenate(
-                [diag_coulomb_mats, np.zeros((pad, norb, norb), dtype=np.float64)],
-                axis=0,
-            )
-            orbital_rotations = np.concatenate(
-                [orbital_rotations, np.tile(np.eye(norb)[None, :, :], (pad, 1, 1))],
-                axis=0,
+        terms = [
+            _canonicalize_df_term(z, u)
+            for z, u in zip(diag_coulomb_mats, orbital_rotations)
+        ]
+        terms.sort(key=lambda term: _df_term_sort_key(term[0], term[1]))
+
+        if self.n_reps is not None:
+            terms = terms[: self.n_reps]
+
+        if self.n_reps is not None and len(terms) < self.n_reps:
+            pad = self.n_reps - len(terms)
+            terms.extend(
+                [
+                    (
+                        np.zeros((norb, norb), dtype=np.float64),
+                        np.eye(norb, dtype=np.complex128),
+                    )
+                    for _ in range(pad)
+                ]
             )
 
         layers: list[UCJLayer] = []
-        for z, u in zip(diag_coulomb_mats, orbital_rotations):
-            z = np.asarray(z, dtype=np.float64)
-            z = 0.5 * (z + z.T)
+        for z, u in terms:
             layers.append(
                 UCJLayer(
                     diagonal=SpinBalancedSpec(
                         same_spin_params=z.copy(),
                         mixed_spin_params=z.copy(),
                     ),
-                    orbital_rotation=canonicalize_unitary(np.asarray(u, dtype=np.complex128)),
+                    orbital_rotation=u,
                 )
             )
 
