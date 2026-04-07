@@ -145,6 +145,14 @@ class _GaugeReducedSpinBalancedMap:
     same_spin_pairs: list[tuple[int, int]]
     mixed_spin_pairs: list[tuple[int, int]]
 
+    def __post_init__(self):
+        v_same, n_same = self._build_gauge_basis(self.same_spin_pairs, False)
+        v_mixed, n_mixed = self._build_gauge_basis(self.mixed_spin_pairs, True)
+        object.__setattr__(self, "_v_same", v_same)
+        object.__setattr__(self, "_v_mixed", v_mixed)
+        object.__setattr__(self, "_n_same_reduced", n_same)
+        object.__setattr__(self, "_n_mixed_reduced", n_mixed)
+
     def _build_gauge_basis(
         self,
         pairs: list[tuple[int, int]],
@@ -153,6 +161,7 @@ class _GaugeReducedSpinBalancedMap:
         n_pairs = len(pairs)
         if n_pairs == 0:
             return np.zeros((0, 0), dtype=np.float64), 0
+
         a = np.zeros((n_pairs, self.norb), dtype=np.float64)
         for k, (p, q) in enumerate(pairs):
             if p == q and diag_factor:
@@ -160,26 +169,34 @@ class _GaugeReducedSpinBalancedMap:
             else:
                 a[k, p] = 1.0
                 a[k, q] = 1.0
+
         u, s, _ = np.linalg.svd(a, full_matrices=True)
         rank = int(np.sum(s > 1e-10))
-        v_indep = u[:, rank:]
+        v_indep = np.array(u[:, rank:], copy=True)
+
+        for j in range(v_indep.shape[1]):
+            col = v_indep[:, j]
+            idx = int(np.argmax(np.abs(col)))
+            if abs(col[idx]) > 1e-14 and col[idx] < 0:
+                v_indep[:, j] *= -1.0
+
         return v_indep, v_indep.shape[1]
 
     @property
     def v_same(self) -> np.ndarray:
-        return self._build_gauge_basis(self.same_spin_pairs, False)[0]
+        return self._v_same
 
     @property
     def v_mixed(self) -> np.ndarray:
-        return self._build_gauge_basis(self.mixed_spin_pairs, True)[0]
+        return self._v_mixed
 
     @property
     def n_same_reduced(self) -> int:
-        return self._build_gauge_basis(self.same_spin_pairs, False)[1]
+        return self._n_same_reduced
 
     @property
     def n_mixed_reduced(self) -> int:
-        return self._build_gauge_basis(self.mixed_spin_pairs, True)[1]
+        return self._n_mixed_reduced
 
     @property
     def n_full_per_layer(self) -> int:
