@@ -53,10 +53,9 @@ def _stable_ov_params_from_unitary_subspace(unitary: np.ndarray, nocc: int) -> n
 
     ua, _, vha = np.linalg.svd(a, full_matrices=False)
     q_occ = ua @ vha
+    b_gf = b @ q_occ.conj().T
 
-    b_gauge_fixed = b @ q_occ.conj().T
-
-    ub, s, vh = np.linalg.svd(b_gauge_fixed, full_matrices=False)
+    ub, s, vh = np.linalg.svd(b_gf, full_matrices=False)
     theta = np.arcsin(np.clip(s, -1.0, 1.0))
     z = ub @ np.diag(theta) @ vh
 
@@ -358,6 +357,8 @@ class GCRSpinBalancedParameterization:
         return out
 
     def parameters_from_ucj_ansatz(self, ansatz: UCJAnsatz) -> np.ndarray:
+        from xquces.ucj.parameterization import GaugeFixedUCJSpinBalancedParameterization
+
         if ansatz.norb != self.norb:
             raise ValueError("ansatz norb does not match parameterization")
         if ansatz.n_layers != 1:
@@ -365,76 +366,49 @@ class GCRSpinBalancedParameterization:
         if not ansatz.is_spin_balanced:
             raise TypeError("expected a spin-balanced ansatz")
 
-        layer = ansatz.layers[0]
+        ucj_param = GaugeFixedUCJSpinBalancedParameterization(
+            norb=self.norb,
+            n_layers=1,
+            same_spin_interaction_pairs=self.same_spin_indices,
+            mixed_spin_interaction_pairs=self.mixed_spin_indices,
+            with_final_orbital_rotation=ansatz.final_orbital_rotation is not None,
+            nocc=self.nocc,
+        )
+
+        x_ucj = ucj_param.parameters_from_ansatz(ansatz)
+        ucj_gf = ucj_param.ansatz_from_parameters(x_ucj)
+
+        layer = ucj_gf.layers[0]
         d = layer.diagonal
 
-        same_pairs = self.same_spin_indices
-        mixed_pairs = self.mixed_spin_indices
-        j_map = self.jastrow_gauge_map
+        u = np.asarray(layer.orbital_rotation, dtype=np.complex128)
+        f = (
+            np.asarray(ucj_gf.final_orbital_rotation, dtype=np.complex128)
+            if ucj_gf.final_orbital_rotation is not None
+            else np.eye(self.norb, dtype=np.complex128)
+        )
 
-        left_full = np.asarray(layer.orbital_rotation, dtype=np.complex128)
-        if ansatz.final_orbital_rotation is not None:
-            left_full = np.asarray(ansatz.final_orbital_rotation, dtype=np.complex128) @ left_full
-        right_full = np.asarray(layer.orbital_rotation, dtype=np.complex128).conj().T
+        left_full = f @ u
+        right_full = u.conj().T
 
-        left_gf = canonicalize_unitary(left_full)
-        phase = np.exp(1j * np.angle(np.diag(left_full.conj().T @ left_gf)))
-        phase_transfer = np.diag(phase)
-        right_eff = phase_transfer.conj().T @ right_full
+        left_gf, right_eff = _gauge_fix_left_and_transfer_right(left_full, right_full)
 
-        same_diag = np.diag(np.asarray(d.same_spin_params, dtype=np.float64)).copy()
         same_full = np.asarray(
-            [d.same_spin_params[p, q] for p, q in same_pairs],
+            [d.same_spin_params[p, q] for p, q in self.same_spin_indices],
             dtype=np.float64,
         )
         mixed_full = np.asarray(
-            [d.mixed_spin_params[p, q] for p, q in mixed_pairs],
+            [d.mixed_spin_params[p, q] for p, q in self.mixed_spin_indices],
             dtype=np.float64,
         )
-
-        if j_map.n_same_reduced > 0:
-            x_same_red = j_map.v_same.T @ same_full
-            same_red_full = j_map.v_same @ x_same_red
-        else:
-            x_same_red = np.zeros(0, dtype=np.float64)
-            same_red_full = np.zeros_like(same_full)
-
-        if j_map.n_mixed_reduced > 0:
-            x_mixed_red = j_map.v_mixed.T @ mixed_full
-            mixed_red_full = j_map.v_mixed @ x_mixed_red
-        else:
-            x_mixed_red = np.zeros(0, dtype=np.float64)
-            mixed_red_full = np.zeros_like(mixed_full)
-
-        same_gauge = same_full - same_red_full
-        mixed_gauge = mixed_full - mixed_red_full
-
-        a = np.zeros(self.norb, dtype=np.float64)
-        if len(same_pairs) > 0 and np.linalg.norm(same_gauge) > 1e-12:
-            a_mat = np.zeros((len(same_pairs), self.norb), dtype=np.float64)
-            for k, (p, q) in enumerate(same_pairs):
-                a_mat[k, p] = 1.0
-                a_mat[k, q] = 1.0
-            a = np.linalg.lstsq(a_mat, same_gauge, rcond=None)[0]
-
-        b = np.zeros(self.norb, dtype=np.float64)
-        if len(mixed_pairs) > 0 and np.linalg.norm(mixed_gauge) > 1e-12:
-            b_mat = np.zeros((len(mixed_pairs), self.norb), dtype=np.float64)
-            for k, (p, q) in enumerate(mixed_pairs):
-                if p == q:
-                    b_mat[k, p] = 2.0
-                else:
-                    b_mat[k, p] = 1.0
-                    b_mat[k, q] = 1.0
-            b = np.linalg.lstsq(b_mat, mixed_gauge, rcond=None)[0]
-
-        phi = 0.5 * same_diag + (self.nocc - 1) * a + self.nocc * b
-        right_eff = np.diag(np.exp(1j * phi)) @ right_eff
+        x_j = self.jastrow_gauge_map.full_to_reduced(
+            np.concatenate([same_full, mixed_full])
+        )
 
         x_left = self.left_orbital_chart.parameters_from_unitary(left_gf)
         x_right = _stable_ov_params_from_unitary_subspace(right_eff, self.nocc)
 
-        out = np.concatenate([x_left, x_same_red, x_mixed_red, x_right])
+        out = np.concatenate([x_left, x_j, x_right])
         if out.shape != (self.n_params,):
             raise RuntimeError(f"internal error: produced {out.shape}, expected {(self.n_params,)}")
         return out
