@@ -15,6 +15,30 @@ from xquces.ucj.parameterization import (
     ov_params_from_unitary,
 )
 
+def _ucj_ansatz_from_ffsim_stock(stock: ffsim.UCJOpSpinBalanced) -> UCJAnsatz:
+    layers: list[UCJLayer] = []
+    for mats, u in zip(stock.diag_coulomb_mats, stock.orbital_rotations):
+        same = 0.5 * (np.asarray(mats[0], dtype=np.float64) + np.asarray(mats[0], dtype=np.float64).T)
+        mixed = 0.5 * (np.asarray(mats[1], dtype=np.float64) + np.asarray(mats[1], dtype=np.float64).T)
+        layers.append(
+            UCJLayer(
+                diagonal=SpinBalancedSpec(
+                    same_spin_params=same.copy(),
+                    mixed_spin_params=mixed.copy(),
+                ),
+                orbital_rotation=np.asarray(u, dtype=np.complex128),
+            )
+        )
+
+    final_orbital_rotation = None
+    if stock.final_orbital_rotation is not None:
+        final_orbital_rotation = np.asarray(stock.final_orbital_rotation, dtype=np.complex128)
+
+    return UCJAnsatz(
+        layers=tuple(layers),
+        final_orbital_rotation=final_orbital_rotation,
+    )
+
 def _canonicalize_real_columns(mat: np.ndarray, tol: float = 1e-12) -> np.ndarray:
     mat = np.array(mat, dtype=np.float64, copy=True)
     for j in range(mat.shape[1]):
@@ -147,70 +171,21 @@ class UCJBalancedDFSeed:
     multi_stage_step: int | None = None
 
     def build_ansatz(self) -> UCJAnsatz:
-        t2 = np.asarray(self.t2, dtype=np.float64)
-        if t2.ndim != 4:
-            raise ValueError("t2 must have shape (nocc, nocc, nvirt, nvirt)")
-        nocc, _, nvirt, _ = t2.shape
-        norb = nocc + nvirt
-
-        max_terms = self.n_reps if self.optimize else None
-
-        diag_coulomb_mats, orbital_rotations = ffsim.linalg.double_factorized_t2(
-            t2,
+        stock = ffsim.UCJOpSpinBalanced.from_t_amplitudes(
+            np.asarray(self.t2, dtype=np.float64),
+            t1=None if self.t1 is None else np.asarray(self.t1, dtype=np.complex128),
+            n_reps=self.n_reps,
+            interaction_pairs=None,
             tol=self.tol,
-            max_terms=max_terms,
             optimize=self.optimize,
             method=self.method,
             callback=self.callback,
             options=self.options,
-            diag_coulomb_indices=None,
             regularization=self.regularization,
             multi_stage_start=self.multi_stage_start,
             multi_stage_step=self.multi_stage_step,
-            return_optimize_result=False,
         )
-
-        terms = [
-            _canonicalize_df_term(z, u)
-            for z, u in zip(diag_coulomb_mats, orbital_rotations)
-        ]
-        terms.sort(key=lambda term: _df_term_sort_key(term[0], term[1]))
-
-        if self.n_reps is not None:
-            terms = terms[: self.n_reps]
-
-        if self.n_reps is not None and len(terms) < self.n_reps:
-            pad = self.n_reps - len(terms)
-            terms.extend(
-                [
-                    (
-                        np.zeros((norb, norb), dtype=np.float64),
-                        np.eye(norb, dtype=np.complex128),
-                    )
-                    for _ in range(pad)
-                ]
-            )
-
-        layers: list[UCJLayer] = []
-        for z, u in terms:
-            layers.append(
-                UCJLayer(
-                    diagonal=SpinBalancedSpec(
-                        same_spin_params=z.copy(),
-                        mixed_spin_params=z.copy(),
-                    ),
-                    orbital_rotation=u,
-                )
-            )
-
-        final_orbital_rotation = None
-        if self.t1 is not None:
-            final_orbital_rotation = _orbital_rotation_from_t1_amplitudes(self.t1)
-
-        return UCJAnsatz(
-            layers=tuple(layers),
-            final_orbital_rotation=final_orbital_rotation,
-        )
+        return _ucj_ansatz_from_ffsim_stock(stock)
 
     def build_parameters(self) -> tuple[UCJAnsatz, UCJSpinBalancedParameterization, np.ndarray]:
         ansatz = self.build_ansatz()

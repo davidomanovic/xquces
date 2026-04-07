@@ -6,7 +6,7 @@ import numpy as np
 
 from xquces.gcr.parameterization import GCRSpinBalancedParameterization
 from xquces.gcr.model import GCRAnsatz
-from xquces.ucj.init import GaugeFixedUCJBalancedDFSeed
+from xquces.ucj.init import UCJBalancedDFSeed
 
 
 @dataclass(frozen=True)
@@ -24,7 +24,7 @@ class GaugeFixedGCRBalancedDFSeed:
     multi_stage_step: int | None = None
 
     def build_parameters(self) -> tuple[GCRAnsatz, GCRSpinBalancedParameterization, np.ndarray]:
-        ucj_ansatz, _, _ = GaugeFixedUCJBalancedDFSeed(
+        ucj_ansatz = UCJBalancedDFSeed(
             t2=self.t2,
             t1=self.t1,
             n_reps=self.n_reps,
@@ -36,12 +36,11 @@ class GaugeFixedGCRBalancedDFSeed:
             regularization=self.regularization,
             multi_stage_start=self.multi_stage_start,
             multi_stage_step=self.multi_stage_step,
-        ).build_parameters()
+        ).build_ansatz()
 
-        nocc = np.asarray(self.t2).shape[0]
         param = GCRSpinBalancedParameterization(
             norb=ucj_ansatz.norb,
-            nocc=nocc,
+            nocc=np.asarray(self.t2).shape[0],
         )
 
         x0 = param.parameters_from_ucj_ansatz(ucj_ansatz)
