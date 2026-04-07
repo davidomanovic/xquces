@@ -137,3 +137,85 @@ def apply_ucj_spin_balanced(
             copy=False,
         )
     return out
+
+
+def apply_gcr_spin_restricted(
+    vec: np.ndarray,
+    double_params: np.ndarray,
+    pair_params: np.ndarray,
+    norb: int,
+    nelec: tuple[int, int],
+    time: float = 1.0,
+    left_orbital_rotation: np.ndarray | None = None,
+    right_orbital_rotation: np.ndarray | None = None,
+    copy: bool = True,
+) -> np.ndarray:
+    arr = np.array(vec, dtype=np.complex128, copy=copy)
+    if right_orbital_rotation is not None:
+        arr = apply_orbital_rotation(
+            arr,
+            right_orbital_rotation,
+            norb=norb,
+            nelec=nelec,
+            copy=False,
+        )
+    arr = apply_ucj_spin_restricted(
+        arr,
+        double_params=double_params,
+        pair_params=pair_params,
+        norb=norb,
+        nelec=nelec,
+        time=time,
+        orbital_rotation=None,
+        copy=False,
+    )
+    if left_orbital_rotation is not None:
+        arr = apply_orbital_rotation(
+            arr,
+            left_orbital_rotation,
+            norb=norb,
+            nelec=nelec,
+            copy=False,
+        )
+    return arr
+
+
+def apply_gcr_spin_balanced(
+    vec: np.ndarray,
+    same_spin_params: np.ndarray,
+    mixed_spin_params: np.ndarray,
+    norb: int,
+    nelec: tuple[int, int],
+    time: float = 1.0,
+    left_orbital_rotation: np.ndarray | None = None,
+    right_orbital_rotation: np.ndarray | None = None,
+    copy: bool = True,
+) -> np.ndarray:
+    arr = np.array(vec, dtype=np.complex128, copy=copy)
+    if right_orbital_rotation is not None:
+        arr = apply_orbital_rotation(
+            arr,
+            right_orbital_rotation,
+            norb=norb,
+            nelec=nelec,
+            copy=False,
+        )
+    arr = apply_ucj_spin_balanced(
+        arr,
+        same_spin_params=same_spin_params,
+        mixed_spin_params=mixed_spin_params,
+        norb=norb,
+        nelec=nelec,
+        time=time,
+        orbital_rotation=None,
+        copy=False,
+    )
+    if left_orbital_rotation is not None:
+        arr = apply_orbital_rotation(
+            arr,
+            left_orbital_rotation,
+            norb=norb,
+            nelec=nelec,
+            copy=False,
+        )
+    return arr

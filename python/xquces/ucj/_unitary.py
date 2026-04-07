@@ -239,3 +239,52 @@ class OccupiedVirtualUnitaryChart:
 
     def parameters_from_unitary(self, u: np.ndarray) -> np.ndarray:
         return exact_ov_parameters_from_unitary(u, self.nocc, self.nvirt)
+
+
+def exact_full_unitary_parameters_from_unitary(u: np.ndarray) -> np.ndarray:
+    u = np.asarray(u, dtype=np.complex128)
+    _assert_square_matrix(u, "u")
+    norb = u.shape[0]
+    if not np.allclose(u.conj().T @ u, np.eye(norb), atol=1e-10):
+        raise ValueError("u must be unitary")
+    r = np.array(u, copy=True)
+    params = np.zeros(norb**2, dtype=np.float64)
+    idx = 0
+    for col in range(norb):
+        for row in range(norb - 1, col, -1):
+            theta, phi, g = _givens_zeroing_matrix(r[row - 1, col], r[row, col])
+            r[[row - 1, row], :] = g @ r[[row - 1, row], :]
+            params[idx] = theta
+            params[idx + 1] = phi
+            idx += 2
+    params[idx:] = np.angle(np.diag(r))
+    return params
+
+
+def exact_full_unitary_from_parameters(params: np.ndarray, norb: int) -> np.ndarray:
+    params = np.asarray(params, dtype=np.float64)
+    if params.shape != (norb**2,):
+        raise ValueError(f"Expected {(norb**2,)}, got {params.shape}.")
+    out = np.eye(norb, dtype=np.complex128)
+    idx = 0
+    for p, qrow in _givens_pairs(norb):
+        theta = float(params[idx])
+        phi = float(params[idx + 1])
+        idx += 2
+        block = np.eye(norb, dtype=np.complex128)
+        block[np.ix_([p, qrow], [p, qrow])] = _givens_dagger_from_angles(theta, phi)
+        out = out @ block
+    out = out @ np.diag(np.exp(1j * params[idx:idx + norb]))
+    return out
+
+
+@dataclass(frozen=True)
+class ExactUnitaryChart:
+    def n_params(self, norb: int) -> int:
+        return norb**2
+
+    def unitary_from_parameters(self, params: np.ndarray, norb: int) -> np.ndarray:
+        return exact_full_unitary_from_parameters(params, norb)
+
+    def parameters_from_unitary(self, u: np.ndarray) -> np.ndarray:
+        return exact_full_unitary_parameters_from_unitary(u)

@@ -22,7 +22,6 @@ from xquces.ucj.init import (
 from xquces.ucj.model import SpinBalancedSpec, SpinRestrictedSpec, UCJAnsatz, UCJLayer
 from xquces.ucj.parameterization import (
     GaugeFixedUCJSpinBalancedParameterization,
-    GaugeFixedUCJSpinRestrictedParameterization,
     UCJSpinBalancedParameterization,
     UCJSpinRestrictedParameterization,
 )
