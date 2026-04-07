@@ -18,21 +18,25 @@ from xquces.ucj.parameterization import (
 def _ucj_ansatz_from_ffsim_stock(stock: ffsim.UCJOpSpinBalanced) -> UCJAnsatz:
     layers: list[UCJLayer] = []
     for mats, u in zip(stock.diag_coulomb_mats, stock.orbital_rotations):
-        same = 0.5 * (np.asarray(mats[0], dtype=np.float64) + np.asarray(mats[0], dtype=np.float64).T)
-        mixed = 0.5 * (np.asarray(mats[1], dtype=np.float64) + np.asarray(mats[1], dtype=np.float64).T)
+        same = np.asarray(mats[0], dtype=np.float64)
+        mixed = np.asarray(mats[1], dtype=np.float64)
+        same = 0.5 * (same + same.T)
+        mixed = 0.5 * (mixed + mixed.T)
         layers.append(
             UCJLayer(
                 diagonal=SpinBalancedSpec(
                     same_spin_params=same.copy(),
                     mixed_spin_params=mixed.copy(),
                 ),
-                orbital_rotation=np.asarray(u, dtype=np.complex128),
+                orbital_rotation=canonicalize_unitary(np.asarray(u, dtype=np.complex128)),
             )
         )
 
     final_orbital_rotation = None
     if stock.final_orbital_rotation is not None:
-        final_orbital_rotation = np.asarray(stock.final_orbital_rotation, dtype=np.complex128)
+        final_orbital_rotation = canonicalize_unitary(
+            np.asarray(stock.final_orbital_rotation, dtype=np.complex128)
+        )
 
     return UCJAnsatz(
         layers=tuple(layers),
