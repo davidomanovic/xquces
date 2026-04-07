@@ -171,7 +171,6 @@ class GCRSpinRestrictedParameterization:
 
         return func
 
-
 @dataclass(frozen=True)
 class GCRSpinBalancedParameterization:
     norb: int
@@ -195,7 +194,6 @@ class GCRSpinBalancedParameterization:
                 self.mixed_spin_indices,
             ),
         )
-
 
     @property
     def right_orbital_chart(self) -> OccupiedVirtualUnitaryChart:
@@ -255,6 +253,16 @@ class GCRSpinBalancedParameterization:
             right_orbital_rotation=right,
         )
 
+    @staticmethod
+    def _reduced_coordinates(basis: np.ndarray, vec: np.ndarray) -> np.ndarray:
+        basis = np.asarray(basis, dtype=np.float64)
+        vec = np.asarray(vec, dtype=np.float64)
+        if basis.ndim != 2:
+            raise ValueError("basis must be a matrix")
+        if basis.shape[1] == 0:
+            return np.zeros(0, dtype=np.float64)
+        return np.linalg.lstsq(basis, vec, rcond=None)[0]
+
     def parameters_from_ansatz(self, ansatz: GCRAnsatz) -> np.ndarray:
         if ansatz.norb != self.norb:
             raise ValueError("ansatz norb does not match parameterization")
@@ -265,12 +273,10 @@ class GCRSpinBalancedParameterization:
         mixed_pairs = self.mixed_spin_indices
         j_map = self.jastrow_gauge_map
 
-        left = np.asarray(ansatz.left_orbital_rotation, dtype=np.complex128)
-        right = np.asarray(ansatz.right_orbital_rotation, dtype=np.complex128)
-
-        left_gf = canonicalize_unitary(left)
-        phase_transfer = left.conj().T @ left_gf
-        right_eff = phase_transfer.conj().T @ right
+        left_gf, right_eff = _gauge_fix_left_and_transfer_right(
+            ansatz.left_orbital_rotation,
+            ansatz.right_orbital_rotation,
+        )
 
         d = ansatz.diagonal
 
@@ -285,16 +291,8 @@ class GCRSpinBalancedParameterization:
             dtype=np.float64,
         )
 
-        x_same_red = (
-            j_map.v_same.T @ same_full
-            if j_map.n_same_reduced > 0
-            else np.zeros(0, dtype=np.float64)
-        )
-        x_mixed_red = (
-            j_map.v_mixed.T @ mixed_full
-            if j_map.n_mixed_reduced > 0
-            else np.zeros(0, dtype=np.float64)
-        )
+        x_same_red = self._reduced_coordinates(j_map.v_same, same_full)
+        x_mixed_red = self._reduced_coordinates(j_map.v_mixed, mixed_full)
 
         same_red_full = (
             j_map.v_same @ x_same_red
@@ -316,8 +314,7 @@ class GCRSpinBalancedParameterization:
             for k, (p, q) in enumerate(same_pairs):
                 A_same[k, p] = 1.0
                 A_same[k, q] = 1.0
-            if np.linalg.norm(same_gauge) > 1e-12:
-                a = np.linalg.lstsq(A_same, same_gauge, rcond=None)[0]
+            a = np.linalg.lstsq(A_same, same_gauge, rcond=None)[0]
 
         b = np.zeros(self.norb, dtype=np.float64)
         if len(mixed_pairs) > 0:
@@ -328,8 +325,7 @@ class GCRSpinBalancedParameterization:
                 else:
                     A_mixed[k, p] = 1.0
                     A_mixed[k, q] = 1.0
-            if np.linalg.norm(mixed_gauge) > 1e-12:
-                b = np.linalg.lstsq(A_mixed, mixed_gauge, rcond=None)[0]
+            b = np.linalg.lstsq(A_mixed, mixed_gauge, rcond=None)[0]
 
         phi = 0.5 * same_diag + (self.nocc - 1) * a + self.nocc * b
         right_eff = np.diag(np.exp(1j * phi)) @ right_eff
@@ -364,7 +360,7 @@ class GCRSpinBalancedParameterization:
         if not ansatz.is_spin_balanced:
             raise TypeError("expected a spin-balanced ansatz")
         return self.parameters_from_ansatz(gcr_from_ucj_ansatz(ansatz))
-        
+
     def params_to_vec(
         self,
         reference_vec: np.ndarray,
