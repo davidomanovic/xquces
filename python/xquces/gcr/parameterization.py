@@ -446,20 +446,29 @@ class GCRSpinBalancedParameterization:
         right = np.asarray(ansatz.right_orbital_rotation, dtype=np.complex128)
 
         same_diag = np.diag(np.asarray(d.same_spin_params, dtype=np.float64))
+
         same_pair_full = np.asarray(
             [d.same_spin_params[p, q] for p, q in self.same_spin_indices],
             dtype=np.float64,
         )
+
         mixed_full = np.asarray(
             [d.mixed_spin_params[p, q] for p, q in self.mixed_spin_indices],
             dtype=np.float64,
         )
 
         lam = self._diag_gauge_map.gauge_lambda(same_pair_full, mixed_full)
+
         phase_vec = 0.5 * same_diag + (2 * self.nocc - 1) * lam
         left_eff = left @ _diag_unitary(phase_vec)
 
+        mixed_full_eff = np.array(mixed_full, copy=True)
+        for k, (p, q) in enumerate(self.mixed_spin_indices):
+            if p == q:
+                mixed_full_eff[k] -= 2.0 * lam[p]
+
         out = np.zeros(self.n_params, dtype=np.float64)
+
         idx = 0
 
         n = self.n_left_orbital_rotation_params
@@ -467,7 +476,10 @@ class GCRSpinBalancedParameterization:
         idx += n
 
         n = self.n_jastrow_params
-        out[idx : idx + n] = self._diag_gauge_map.full_to_reduced(same_pair_full, mixed_full)
+        out[idx : idx + n] = self._diag_gauge_map.full_to_reduced(
+            same_pair_full,
+            mixed_full_eff,
+        )
         idx += n
 
         n = self.n_right_orbital_rotation_params
