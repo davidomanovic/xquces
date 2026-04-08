@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from xquces.gcr.parameterization import GCRSpinBalancedParameterization
 from xquces.gcr.model import GCRAnsatz
+from xquces.gcr.parameterization import GCRSpinBalancedParameterization
 from xquces.ucj.init import UCJBalancedDFSeed
 
 

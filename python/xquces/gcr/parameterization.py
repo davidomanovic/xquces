@@ -9,6 +9,7 @@ import numpy as np
 from xquces.gcr.model import GCRAnsatz, gcr_from_ucj_ansatz
 from xquces.ucj._unitary import ExactUnitaryChart
 from xquces.ucj.model import SpinBalancedSpec, SpinRestrictedSpec, UCJAnsatz
+from xquces.ucj.parameterization import ov_final_unitary, ov_params_from_unitary
 
 
 def _default_triu_indices(norb: int) -> list[tuple[int, int]]:
@@ -59,12 +60,38 @@ def _symmetric_matrix_from_values(
 
 
 @dataclass(frozen=True)
+class _OVRightChart:
+    nocc: int
+    norb: int
+
+    @property
+    def nvirt(self) -> int:
+        return self.norb - self.nocc
+
+    def n_params(self, norb: int) -> int:
+        if norb != self.norb:
+            raise ValueError("norb does not match chart dimensions")
+        return 2 * self.nocc * self.nvirt
+
+    def unitary_from_parameters(self, params: np.ndarray, norb: int) -> np.ndarray:
+        if norb != self.norb:
+            raise ValueError("norb does not match chart dimensions")
+        return ov_final_unitary(np.asarray(params, dtype=np.float64), norb, self.nocc)
+
+    def parameters_from_unitary(self, u: np.ndarray) -> np.ndarray:
+        u = np.asarray(u, dtype=np.complex128)
+        if u.shape != (self.norb, self.norb):
+            raise ValueError("u has wrong shape")
+        return ov_params_from_unitary(u, self.nocc)
+
+
+@dataclass(frozen=True)
 class GCRSpinRestrictedParameterization:
     norb: int
     nocc: int
     interaction_pairs: list[tuple[int, int]] | None = None
-    left_orbital_chart: ExactUnitaryChart = field(default_factory=ExactUnitaryChart)
-    right_orbital_chart: ExactUnitaryChart = field(default_factory=ExactUnitaryChart)
+    left_orbital_chart: object = field(default_factory=ExactUnitaryChart)
+    right_orbital_chart: object = field(default_factory=ExactUnitaryChart)
 
     def __post_init__(self):
         if not (0 <= self.nocc <= self.norb):
@@ -76,8 +103,18 @@ class GCRSpinRestrictedParameterization:
         return _validate_pairs(self.interaction_pairs, self.norb, allow_diagonal=False)
 
     @property
+    def _effective_left_chart(self):
+        return self.left_orbital_chart
+
+    @property
+    def _effective_right_chart(self):
+        if isinstance(self.right_orbital_chart, ExactUnitaryChart):
+            return _OVRightChart(self.nocc, self.norb)
+        return self.right_orbital_chart
+
+    @property
     def n_left_orbital_rotation_params(self) -> int:
-        return self.left_orbital_chart.n_params(self.norb)
+        return self._effective_left_chart.n_params(self.norb)
 
     @property
     def n_diagonal_params(self) -> int:
@@ -89,7 +126,7 @@ class GCRSpinRestrictedParameterization:
 
     @property
     def n_right_orbital_rotation_params(self) -> int:
-        return self.right_orbital_chart.n_params(self.norb)
+        return self._effective_right_chart.n_params(self.norb)
 
     @property
     def n_params(self) -> int:
@@ -108,7 +145,7 @@ class GCRSpinRestrictedParameterization:
         idx = 0
 
         n = self.n_left_orbital_rotation_params
-        left = self.left_orbital_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
+        left = self._effective_left_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
         idx += n
 
         n = self.n_diagonal_params
@@ -120,7 +157,7 @@ class GCRSpinRestrictedParameterization:
         idx += n
 
         n = self.n_right_orbital_rotation_params
-        right = self.right_orbital_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
+        right = self._effective_right_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
 
         return GCRAnsatz(
             diagonal=SpinRestrictedSpec(double_params=d, pair_params=p),
@@ -140,7 +177,7 @@ class GCRSpinRestrictedParameterization:
         idx = 0
 
         n = self.n_left_orbital_rotation_params
-        out[idx:idx + n] = self.left_orbital_chart.parameters_from_unitary(ansatz.left_orbital_rotation)
+        out[idx:idx + n] = self._effective_left_chart.parameters_from_unitary(ansatz.left_orbital_rotation)
         idx += n
 
         n = self.n_diagonal_params
@@ -153,7 +190,7 @@ class GCRSpinRestrictedParameterization:
             idx += n
 
         n = self.n_right_orbital_rotation_params
-        out[idx:idx + n] = self.right_orbital_chart.parameters_from_unitary(ansatz.right_orbital_rotation)
+        out[idx:idx + n] = self._effective_right_chart.parameters_from_unitary(ansatz.right_orbital_rotation)
 
         return out
 
@@ -179,8 +216,8 @@ class GCRSpinBalancedParameterization:
     nocc: int
     same_spin_interaction_pairs: list[tuple[int, int]] | None = None
     mixed_spin_interaction_pairs: list[tuple[int, int]] | None = None
-    left_orbital_chart: ExactUnitaryChart = field(default_factory=ExactUnitaryChart)
-    right_orbital_chart: ExactUnitaryChart = field(default_factory=ExactUnitaryChart)
+    left_orbital_chart: object = field(default_factory=ExactUnitaryChart)
+    right_orbital_chart: object = field(default_factory=ExactUnitaryChart)
 
     def __post_init__(self):
         if not (0 <= self.nocc <= self.norb):
@@ -197,8 +234,18 @@ class GCRSpinBalancedParameterization:
         return _validate_pairs(self.mixed_spin_interaction_pairs, self.norb, allow_diagonal=True)
 
     @property
+    def _effective_left_chart(self):
+        return self.left_orbital_chart
+
+    @property
+    def _effective_right_chart(self):
+        if isinstance(self.right_orbital_chart, ExactUnitaryChart):
+            return _OVRightChart(self.nocc, self.norb)
+        return self.right_orbital_chart
+
+    @property
     def n_left_orbital_rotation_params(self) -> int:
-        return self.left_orbital_chart.n_params(self.norb)
+        return self._effective_left_chart.n_params(self.norb)
 
     @property
     def n_same_diag_params(self) -> int:
@@ -214,7 +261,7 @@ class GCRSpinBalancedParameterization:
 
     @property
     def n_right_orbital_rotation_params(self) -> int:
-        return self.right_orbital_chart.n_params(self.norb)
+        return self._effective_right_chart.n_params(self.norb)
 
     @property
     def n_params(self) -> int:
@@ -236,7 +283,7 @@ class GCRSpinBalancedParameterization:
         idx = 0
 
         n = self.n_left_orbital_rotation_params
-        left = self.left_orbital_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
+        left = self._effective_left_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
         idx += n
 
         n = self.n_same_diag_params
@@ -253,7 +300,7 @@ class GCRSpinBalancedParameterization:
         idx += n
 
         n = self.n_right_orbital_rotation_params
-        right = self.right_orbital_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
+        right = self._effective_right_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
 
         return GCRAnsatz(
             diagonal=SpinBalancedSpec(
@@ -278,7 +325,7 @@ class GCRSpinBalancedParameterization:
         idx = 0
 
         n = self.n_left_orbital_rotation_params
-        out[idx:idx + n] = self.left_orbital_chart.parameters_from_unitary(ansatz.left_orbital_rotation)
+        out[idx:idx + n] = self._effective_left_chart.parameters_from_unitary(ansatz.left_orbital_rotation)
         idx += n
 
         n = self.n_same_diag_params
@@ -302,7 +349,7 @@ class GCRSpinBalancedParameterization:
             idx += n
 
         n = self.n_right_orbital_rotation_params
-        out[idx:idx + n] = self.right_orbital_chart.parameters_from_unitary(ansatz.right_orbital_rotation)
+        out[idx:idx + n] = self._effective_right_chart.parameters_from_unitary(ansatz.right_orbital_rotation)
 
         return out
 
