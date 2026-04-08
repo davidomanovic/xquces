@@ -5,22 +5,13 @@ from dataclasses import InitVar, dataclass, field
 from typing import cast
 
 import numpy as np
-from ffsim import linalg, protocols
-from ffsim.variational.ucj_spin_balanced import UCJOpSpinBalanced
-from ffsim.variational.util import validate_interaction_pairs
 
-
-def _canonicalize_internal_unitary(u: np.ndarray, tol: float = 1e-12) -> np.ndarray:
-    u = np.array(u, dtype=complex, copy=True)
-    norb = u.shape[0]
-    phases = np.ones(norb, dtype=complex)
-    for j in range(norb):
-        col = u[:, j]
-        idx = int(np.argmax(np.abs(col)))
-        val = col[idx]
-        if abs(val) > tol:
-            phases[j] = np.exp(-1j * np.angle(val))
-    return u @ np.diag(phases)
+from xquces.ucj.native import (
+    UCJOpSpinBalanced,
+    is_real_symmetric,
+    is_unitary,
+    validate_interaction_pairs,
+)
 
 
 class _GaugeReducedUCJMap:
@@ -41,8 +32,7 @@ class _GaugeReducedUCJMap:
         rows_full, cols_full = np.triu_indices(norb, k=0)
         diag_positions_in_imag = [idx for idx, (r, c) in enumerate(zip(rows_full, cols_full)) if r == c]
         self.phase_indices = np.array([n_triu_strict + p for p in diag_positions_in_imag], dtype=int)
-        all_indices = np.arange(self.n_orb_rot_full)
-        self.kept_indices = np.setdiff1d(all_indices, self.phase_indices)
+        self.kept_indices = np.setdiff1d(np.arange(self.n_orb_rot_full), self.phase_indices)
         self.n_orb_rot_reduced = len(self.kept_indices)
         self.n_full_per_layer = self.n_orb_rot_full + self.n_aa + self.n_ab
         self.n_reduced_per_layer = self.n_orb_rot_reduced + self.n_indep_aa + self.n_indep_ab
@@ -71,16 +61,16 @@ class _GaugeReducedUCJMap:
         iff = 0
         for _ in range(self.n_reps):
             x_full_orb = np.zeros(self.n_orb_rot_full)
-            x_full_orb[self.kept_indices] = x_reduced[ir: ir + self.n_orb_rot_reduced]
-            x_full[iff: iff + self.n_orb_rot_full] = x_full_orb
+            x_full_orb[self.kept_indices] = x_reduced[ir : ir + self.n_orb_rot_reduced]
+            x_full[iff : iff + self.n_orb_rot_full] = x_full_orb
             ir += self.n_orb_rot_reduced
             iff += self.n_orb_rot_full
             if self.n_indep_aa > 0:
-                x_full[iff: iff + self.n_aa] = self.v_aa @ x_reduced[ir: ir + self.n_indep_aa]
+                x_full[iff : iff + self.n_aa] = self.v_aa @ x_reduced[ir : ir + self.n_indep_aa]
             ir += self.n_indep_aa
             iff += self.n_aa
             if self.n_indep_ab > 0:
-                x_full[iff: iff + self.n_ab] = self.v_ab @ x_reduced[ir: ir + self.n_indep_ab]
+                x_full[iff : iff + self.n_ab] = self.v_ab @ x_reduced[ir : ir + self.n_indep_ab]
             ir += self.n_indep_ab
             iff += self.n_ab
         return x_full
@@ -90,15 +80,15 @@ class _GaugeReducedUCJMap:
         ir = 0
         iff = 0
         for _ in range(self.n_reps):
-            x_reduced[ir: ir + self.n_orb_rot_reduced] = x_full[iff: iff + self.n_orb_rot_full][self.kept_indices]
+            x_reduced[ir : ir + self.n_orb_rot_reduced] = x_full[iff : iff + self.n_orb_rot_full][self.kept_indices]
             ir += self.n_orb_rot_reduced
             iff += self.n_orb_rot_full
             if self.n_indep_aa > 0:
-                x_reduced[ir: ir + self.n_indep_aa] = self.v_aa.T @ x_full[iff: iff + self.n_aa]
+                x_reduced[ir : ir + self.n_indep_aa] = self.v_aa.T @ x_full[iff : iff + self.n_aa]
             ir += self.n_indep_aa
             iff += self.n_aa
             if self.n_indep_ab > 0:
-                x_reduced[ir: ir + self.n_indep_ab] = self.v_ab.T @ x_full[iff: iff + self.n_ab]
+                x_reduced[ir : ir + self.n_indep_ab] = self.v_ab.T @ x_full[iff : iff + self.n_ab]
             ir += self.n_indep_ab
             iff += self.n_ab
         return x_reduced
@@ -163,7 +153,7 @@ def ov_params_from_unitary(unitary: np.ndarray, nocc: int) -> np.ndarray:
 
 
 @dataclass(frozen=True)
-class UCJOpGaugeFixed(protocols.SupportsApplyUnitary, protocols.SupportsApproximateEquality):
+class UCJOpGaugeFixed:
     diag_coulomb_mats: np.ndarray
     orbital_rotations: np.ndarray
     final_orbital_rotation: np.ndarray | None = None
@@ -174,29 +164,27 @@ class UCJOpGaugeFixed(protocols.SupportsApplyUnitary, protocols.SupportsApproxim
     atol: InitVar[float] = 1e-8
 
     def __post_init__(self, validate: bool, rtol: float, atol: float):
-        if validate:
-            if self.diag_coulomb_mats.ndim != 4:
-                raise ValueError(f"diag_coulomb_mats should have shape (n_reps, 2, norb, norb). Got shape {self.diag_coulomb_mats.shape}.")
-            if self.orbital_rotations.ndim != 3:
-                raise ValueError(f"orbital_rotations should have shape (n_reps, norb, norb). Got shape {self.orbital_rotations.shape}.")
-            if self.final_orbital_rotation is not None and self.final_orbital_rotation.ndim != 2:
-                raise ValueError("final_orbital_rotation should have shape (norb, norb).")
-            norb = self.diag_coulomb_mats.shape[-1]
-            if self.orbital_rotations.shape != (self.diag_coulomb_mats.shape[0], norb, norb):
-                raise ValueError("orbital_rotations shape was inconsistent with diag_coulomb_mats.")
-            if self.final_orbital_rotation is not None and self.final_orbital_rotation.shape != (norb, norb):
-                raise ValueError("final_orbital_rotation shape was inconsistent with diag_coulomb_mats.")
-            if not np.allclose(self.diag_coulomb_mats[:, 0], np.swapaxes(self.diag_coulomb_mats[:, 0], -2, -1), rtol=rtol, atol=atol):
-                raise ValueError("alpha-alpha diagonal Coulomb matrices were not symmetric.")
-            if not np.allclose(self.diag_coulomb_mats[:, 1], np.swapaxes(self.diag_coulomb_mats[:, 1], -2, -1), rtol=rtol, atol=atol):
-                raise ValueError("alpha-beta diagonal Coulomb matrices were not symmetric.")
-            for orbital_rotation in self.orbital_rotations:
-                if not linalg.is_unitary(orbital_rotation, rtol=rtol, atol=atol):
-                    raise ValueError("Orbital rotations were not all unitary.")
-            if self.final_orbital_rotation is not None and not linalg.is_unitary(self.final_orbital_rotation, rtol=rtol, atol=atol):
-                raise ValueError("Final orbital rotation was not unitary.")
-            if self.final_orbital_rotation is not None and self.nocc is None:
-                raise ValueError("nocc must be provided when final_orbital_rotation is present.")
+        if not validate:
+            return
+        if self.diag_coulomb_mats.ndim != 4 or self.diag_coulomb_mats.shape[1] != 2:
+            raise ValueError(f"diag_coulomb_mats should have shape (n_reps, 2, norb, norb). Got shape {self.diag_coulomb_mats.shape}.")
+        if self.orbital_rotations.ndim != 3:
+            raise ValueError(f"orbital_rotations should have shape (n_reps, norb, norb). Got shape {self.orbital_rotations.shape}.")
+        if self.final_orbital_rotation is not None and self.final_orbital_rotation.ndim != 2:
+            raise ValueError("final_orbital_rotation should have shape (norb, norb).")
+        norb = self.diag_coulomb_mats.shape[-1]
+        if self.orbital_rotations.shape != (self.diag_coulomb_mats.shape[0], norb, norb):
+            raise ValueError("orbital_rotations shape was inconsistent with diag_coulomb_mats.")
+        if self.final_orbital_rotation is not None and self.final_orbital_rotation.shape != (norb, norb):
+            raise ValueError("final_orbital_rotation shape was inconsistent with diag_coulomb_mats.")
+        if not all(is_real_symmetric(mats[0], rtol=rtol, atol=atol) and is_real_symmetric(mats[1], rtol=rtol, atol=atol) for mats in self.diag_coulomb_mats):
+            raise ValueError("Diagonal Coulomb matrices were not all real symmetric.")
+        if not all(is_unitary(orbital_rotation, rtol=rtol, atol=atol) for orbital_rotation in self.orbital_rotations):
+            raise ValueError("Orbital rotations were not all unitary.")
+        if self.final_orbital_rotation is not None and not is_unitary(self.final_orbital_rotation, rtol=rtol, atol=atol):
+            raise ValueError("Final orbital rotation was not unitary.")
+        if self.final_orbital_rotation is not None and self.nocc is None:
+            raise ValueError("nocc must be provided when final_orbital_rotation is present.")
 
     @property
     def norb(self) -> int:
@@ -274,7 +262,6 @@ class UCJOpGaugeFixed(protocols.SupportsApplyUnitary, protocols.SupportsApproxim
             interaction_pairs=(pairs_aa, pairs_ab),
             with_final_orbital_rotation=False,
         )
-        orbital_rotations = np.stack([_canonicalize_internal_unitary(u) for u in stock.orbital_rotations])
         final_orbital_rotation = None
         final_params = None
         if with_final_orbital_rotation:
@@ -282,7 +269,7 @@ class UCJOpGaugeFixed(protocols.SupportsApplyUnitary, protocols.SupportsApproxim
             final_orbital_rotation = ov_final_unitary(final_params, norb, cast(int, nocc))
         return UCJOpGaugeFixed(
             diag_coulomb_mats=stock.diag_coulomb_mats,
-            orbital_rotations=orbital_rotations,
+            orbital_rotations=stock.orbital_rotations,
             final_orbital_rotation=final_orbital_rotation,
             nocc=nocc,
             _final_ov_params=final_params,
@@ -307,7 +294,7 @@ class UCJOpGaugeFixed(protocols.SupportsApplyUnitary, protocols.SupportsApproxim
         gf = _GaugeReducedUCJMap(norb=norb, n_reps=self.n_reps, interaction_pairs=(pairs_aa, pairs_ab))
         stock = UCJOpSpinBalanced(
             diag_coulomb_mats=np.array(self.diag_coulomb_mats, copy=True),
-            orbital_rotations=np.stack([_canonicalize_internal_unitary(u) for u in self.orbital_rotations]),
+            orbital_rotations=np.array(self.orbital_rotations, copy=True),
             final_orbital_rotation=None,
         )
         x_full = stock.to_parameters(interaction_pairs=(pairs_aa, pairs_ab))
@@ -334,12 +321,12 @@ class UCJOpGaugeFixed(protocols.SupportsApplyUnitary, protocols.SupportsApproxim
         method: str = "L-BFGS-B",
         callback=None,
         options: dict | None = None,
-        regularization: float = 0,
+        regularization: float = 0.0,
         multi_stage_start: int | None = None,
         multi_stage_step: int | None = None,
     ) -> "UCJOpGaugeFixed":
         stock = UCJOpSpinBalanced.from_t_amplitudes(
-            t2,
+            np.asarray(t2, dtype=float),
             t1=None,
             n_reps=n_reps,
             interaction_pairs=interaction_pairs,
@@ -352,7 +339,6 @@ class UCJOpGaugeFixed(protocols.SupportsApplyUnitary, protocols.SupportsApproxim
             multi_stage_start=multi_stage_start,
             multi_stage_step=multi_stage_step,
         )
-        orbital_rotations = np.stack([_canonicalize_internal_unitary(u) for u in stock.orbital_rotations])
         final_orbital_rotation = None
         nocc = None
         final_params = None
@@ -367,7 +353,7 @@ class UCJOpGaugeFixed(protocols.SupportsApplyUnitary, protocols.SupportsApproxim
             final_orbital_rotation = ov_final_unitary(final_params, norb, nocc)
         return UCJOpGaugeFixed(
             diag_coulomb_mats=stock.diag_coulomb_mats,
-            orbital_rotations=orbital_rotations,
+            orbital_rotations=stock.orbital_rotations,
             final_orbital_rotation=final_orbital_rotation,
             nocc=nocc,
             _final_ov_params=final_params,
@@ -380,8 +366,8 @@ class UCJOpGaugeFixed(protocols.SupportsApplyUnitary, protocols.SupportsApproxim
             final_orbital_rotation=self.final_orbital_rotation,
         )
 
-    def apply(self, vec: np.ndarray, nelec: int | tuple[int, int], copy: bool = True) -> np.ndarray:
-        return self.as_stock_ucj()._apply_unitary_(vec, norb=self.norb, nelec=nelec, copy=copy)
+    def apply(self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True) -> np.ndarray:
+        return self.as_stock_ucj().apply(vec, nelec=nelec, copy=copy)
 
     def _apply_unitary_(self, vec: np.ndarray, norb: int, nelec: int | tuple[int, int], copy: bool) -> np.ndarray:
         return self.as_stock_ucj()._apply_unitary_(vec, norb=norb, nelec=nelec, copy=copy)
@@ -452,8 +438,8 @@ class GaugeFixedUCJBalancedDFSeedExact:
 
     def build_parameters(self) -> tuple[UCJOpGaugeFixed, GaugeFixedUCJSpinBalancedParameterizationExact, np.ndarray]:
         ansatz = UCJOpGaugeFixed.from_t_amplitudes(
-            np.asarray(self.t2, dtype=np.float64),
-            t1=None if self.t1 is None else np.asarray(self.t1, dtype=np.complex128),
+            np.asarray(self.t2, dtype=float),
+            t1=None if self.t1 is None else np.asarray(self.t1),
             n_reps=self.n_reps,
             interaction_pairs=None,
             tol=self.tol,
