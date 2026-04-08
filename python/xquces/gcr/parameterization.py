@@ -7,7 +7,7 @@ from typing import Callable
 import numpy as np
 
 from xquces.gcr.model import GCRAnsatz, gcr_from_ucj_ansatz
-from xquces.ucj._unitary import ExactUnitaryChart, GaugeFixedInternalUnitaryChart
+from xquces.ucj._unitary import ExactUnitaryChart
 from xquces.ucj.model import SpinBalancedSpec, SpinRestrictedSpec, UCJAnsatz
 from xquces.ucj.parameterization import ov_final_unitary, ov_params_from_unitary
 
@@ -59,30 +59,6 @@ def _symmetric_matrix_from_values(
     return out
 
 
-def _canonicalize_internal_unitary_with_phase_matrix(
-    u: np.ndarray,
-    tol: float = 1e-12,
-) -> tuple[np.ndarray, np.ndarray]:
-    u = np.asarray(u, dtype=np.complex128)
-    if u.ndim != 2 or u.shape[0] != u.shape[1]:
-        raise ValueError("unitary must be square")
-    out = np.array(u, copy=True)
-    norb = out.shape[0]
-    phases = np.ones(norb, dtype=np.complex128)
-    for j in range(norb):
-        col = out[:, j]
-        idx = int(np.argmax(np.abs(col)))
-        val = col[idx]
-        if abs(val) > tol:
-            phases[j] = np.exp(-1j * np.angle(val))
-    d = np.diag(phases)
-    return out @ d, d
-
-
-def _diag_unitary_from_real_phases(phases: np.ndarray) -> np.ndarray:
-    return np.diag(np.exp(1j * np.asarray(phases, dtype=np.float64)))
-
-
 @dataclass(frozen=True)
 class _OVRightChart:
     nocc: int
@@ -107,121 +83,6 @@ class _OVRightChart:
         if u.shape != (self.norb, self.norb):
             raise ValueError("u has wrong shape")
         return ov_params_from_unitary(u, self.nocc)
-
-
-@dataclass(frozen=True)
-class _GaugeReducedSpinBalancedMap:
-    norb: int
-    same_spin_pairs: list[tuple[int, int]]
-    mixed_spin_pairs: list[tuple[int, int]]
-
-    def __post_init__(self):
-        a_same = np.zeros((len(self.same_spin_pairs), self.norb), dtype=np.float64)
-        for k, (p, q) in enumerate(self.same_spin_pairs):
-            a_same[k, p] = 1.0
-            a_same[k, q] = 1.0
-
-        a_mixed = np.zeros((len(self.mixed_spin_pairs), self.norb), dtype=np.float64)
-        for k, (p, q) in enumerate(self.mixed_spin_pairs):
-            if p == q:
-                a_mixed[k, p] = 2.0
-            else:
-                a_mixed[k, p] = 1.0
-                a_mixed[k, q] = 1.0
-
-        u_same, s_same, _ = np.linalg.svd(a_same, full_matrices=True)
-        rank_same = int(np.sum(s_same > 1e-10))
-        v_same = np.array(u_same[:, rank_same:], copy=True)
-
-        u_mixed, s_mixed, _ = np.linalg.svd(a_mixed, full_matrices=True)
-        rank_mixed = int(np.sum(s_mixed > 1e-10))
-        v_mixed = np.array(u_mixed[:, rank_mixed:], copy=True)
-
-        for j in range(v_same.shape[1]):
-            col = v_same[:, j]
-            idx = int(np.argmax(np.abs(col)))
-            if abs(col[idx]) > 1e-14 and col[idx] < 0:
-                v_same[:, j] *= -1.0
-
-        for j in range(v_mixed.shape[1]):
-            col = v_mixed[:, j]
-            idx = int(np.argmax(np.abs(col)))
-            if abs(col[idx]) > 1e-14 and col[idx] < 0:
-                v_mixed[:, j] *= -1.0
-
-        object.__setattr__(self, "_a_same", a_same)
-        object.__setattr__(self, "_a_mixed", a_mixed)
-        object.__setattr__(self, "_v_same", v_same)
-        object.__setattr__(self, "_v_mixed", v_mixed)
-
-    @property
-    def a_same(self) -> np.ndarray:
-        return self._a_same
-
-    @property
-    def a_mixed(self) -> np.ndarray:
-        return self._a_mixed
-
-    @property
-    def v_same(self) -> np.ndarray:
-        return self._v_same
-
-    @property
-    def v_mixed(self) -> np.ndarray:
-        return self._v_mixed
-
-    @property
-    def n_same_reduced(self) -> int:
-        return self.v_same.shape[1]
-
-    @property
-    def n_mixed_reduced(self) -> int:
-        return self.v_mixed.shape[1]
-
-    @property
-    def n_reduced(self) -> int:
-        return self.n_same_reduced + self.n_mixed_reduced
-
-    def reduced_to_full(self, x_reduced: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        x_reduced = np.asarray(x_reduced, dtype=np.float64)
-        i = 0
-        x_same = self.v_same @ x_reduced[i:i + self.n_same_reduced]
-        i += self.n_same_reduced
-        x_mixed = self.v_mixed @ x_reduced[i:i + self.n_mixed_reduced]
-        return x_same, x_mixed
-
-    def full_to_reduced(
-        self,
-        x_same_full: np.ndarray,
-        x_mixed_full: np.ndarray,
-    ) -> np.ndarray:
-        x_same_full = np.asarray(x_same_full, dtype=np.float64)
-        x_mixed_full = np.asarray(x_mixed_full, dtype=np.float64)
-        return np.concatenate(
-            [
-                self.v_same.T @ x_same_full,
-                self.v_mixed.T @ x_mixed_full,
-            ]
-        )
-
-    def split_gauge(
-        self,
-        x_same_full: np.ndarray,
-        x_mixed_full: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        x_same_full = np.asarray(x_same_full, dtype=np.float64)
-        x_mixed_full = np.asarray(x_mixed_full, dtype=np.float64)
-
-        x_same_phys = self.v_same @ (self.v_same.T @ x_same_full)
-        x_mixed_phys = self.v_mixed @ (self.v_mixed.T @ x_mixed_full)
-
-        g_same = x_same_full - x_same_phys
-        g_mixed = x_mixed_full - x_mixed_phys
-
-        lam_same, *_ = np.linalg.lstsq(self.a_same, g_same, rcond=None)
-        lam_mixed, *_ = np.linalg.lstsq(self.a_mixed, g_mixed, rcond=None)
-
-        return x_same_phys, x_mixed_phys, lam_same, lam_mixed
 
 
 @dataclass(frozen=True)
@@ -374,8 +235,6 @@ class GCRSpinBalancedParameterization:
 
     @property
     def _effective_left_chart(self):
-        if isinstance(self.left_orbital_chart, ExactUnitaryChart):
-            return GaugeFixedInternalUnitaryChart()
         return self.left_orbital_chart
 
     @property
@@ -385,20 +244,20 @@ class GCRSpinBalancedParameterization:
         return self.right_orbital_chart
 
     @property
-    def _jastrow_gauge_map(self) -> _GaugeReducedSpinBalancedMap:
-        return _GaugeReducedSpinBalancedMap(
-            self.norb,
-            self.same_spin_indices,
-            self.mixed_spin_indices,
-        )
-
-    @property
     def n_left_orbital_rotation_params(self) -> int:
         return self._effective_left_chart.n_params(self.norb)
 
     @property
-    def n_jastrow_params(self) -> int:
-        return self._jastrow_gauge_map.n_reduced
+    def n_same_diag_params(self) -> int:
+        return self.norb
+
+    @property
+    def n_same_pair_params(self) -> int:
+        return len(self.same_spin_indices)
+
+    @property
+    def n_mixed_params(self) -> int:
+        return len(self.mixed_spin_indices)
 
     @property
     def n_right_orbital_rotation_params(self) -> int:
@@ -408,7 +267,9 @@ class GCRSpinBalancedParameterization:
     def n_params(self) -> int:
         return (
             self.n_left_orbital_rotation_params
-            + self.n_jastrow_params
+            + self.n_same_diag_params
+            + self.n_same_pair_params
+            + self.n_mixed_params
             + self.n_right_orbital_rotation_params
         )
 
@@ -416,18 +277,27 @@ class GCRSpinBalancedParameterization:
         params = np.asarray(params, dtype=np.float64)
         if params.shape != (self.n_params,):
             raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
+
+        pairs_aa = self.same_spin_indices
+        pairs_ab = self.mixed_spin_indices
         idx = 0
 
         n = self.n_left_orbital_rotation_params
         left = self._effective_left_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
         idx += n
 
-        n = self.n_jastrow_params
-        same_full, mixed_full = self._jastrow_gauge_map.reduced_to_full(params[idx:idx + n])
+        n = self.n_same_diag_params
+        same_diag = np.array(params[idx:idx + n], copy=True)
         idx += n
 
-        same = _symmetric_matrix_from_values(same_full, self.norb, self.same_spin_indices)
-        mixed = _symmetric_matrix_from_values(mixed_full, self.norb, self.mixed_spin_indices)
+        n = self.n_same_pair_params
+        same = _symmetric_matrix_from_values(params[idx:idx + n], self.norb, pairs_aa)
+        idx += n
+        same[np.diag_indices(self.norb)] = same_diag
+
+        n = self.n_mixed_params
+        mixed = _symmetric_matrix_from_values(params[idx:idx + n], self.norb, pairs_ab)
+        idx += n
 
         n = self.n_right_orbital_rotation_params
         right = self._effective_right_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
@@ -447,48 +317,39 @@ class GCRSpinBalancedParameterization:
         if not ansatz.is_spin_balanced:
             raise TypeError("expected a spin-balanced ansatz")
 
+        pairs_aa = self.same_spin_indices
+        pairs_ab = self.mixed_spin_indices
         d = ansatz.diagonal
-        left = np.asarray(ansatz.left_orbital_rotation, dtype=np.complex128)
-        right = np.asarray(ansatz.right_orbital_rotation, dtype=np.complex128)
-
-        if isinstance(self.left_orbital_chart, ExactUnitaryChart):
-            left_eff, d_left = _canonicalize_internal_unitary_with_phase_matrix(left)
-        else:
-            left_eff = left
-            d_left = np.eye(self.norb, dtype=np.complex128)
-
-        same_diag = np.diag(np.asarray(d.same_spin_params, dtype=np.float64))
-        same_full = np.asarray(
-            [d.same_spin_params[p, q] for p, q in self.same_spin_indices],
-            dtype=np.float64,
-        )
-        mixed_full = np.asarray(
-            [d.mixed_spin_params[p, q] for p, q in self.mixed_spin_indices],
-            dtype=np.float64,
-        )
-
-        same_phys, mixed_phys, lam_same, lam_mixed = self._jastrow_gauge_map.split_gauge(
-            same_full,
-            mixed_full,
-        )
-
-        phase_vec = 0.5 * same_diag + (self.nocc - 1) * lam_same + self.nocc * lam_mixed
-        d_phase = _diag_unitary_from_real_phases(phase_vec)
-        right_eff = d_phase @ d_left.conj().T @ right
 
         out = np.zeros(self.n_params, dtype=np.float64)
         idx = 0
 
         n = self.n_left_orbital_rotation_params
-        out[idx:idx + n] = self._effective_left_chart.parameters_from_unitary(left_eff)
+        out[idx:idx + n] = self._effective_left_chart.parameters_from_unitary(ansatz.left_orbital_rotation)
         idx += n
 
-        n = self.n_jastrow_params
-        out[idx:idx + n] = self._jastrow_gauge_map.full_to_reduced(same_phys, mixed_phys)
+        n = self.n_same_diag_params
+        out[idx:idx + n] = np.diag(np.asarray(d.same_spin_params, dtype=np.float64))
         idx += n
+
+        n = self.n_same_pair_params
+        if n:
+            out[idx:idx + n] = np.asarray(
+                [d.same_spin_params[p, q] for p, q in pairs_aa],
+                dtype=np.float64,
+            )
+            idx += n
+
+        n = self.n_mixed_params
+        if n:
+            out[idx:idx + n] = np.asarray(
+                [d.mixed_spin_params[p, q] for p, q in pairs_ab],
+                dtype=np.float64,
+            )
+            idx += n
 
         n = self.n_right_orbital_rotation_params
-        out[idx:idx + n] = self._effective_right_chart.parameters_from_unitary(right_eff)
+        out[idx:idx + n] = self._effective_right_chart.parameters_from_unitary(ansatz.right_orbital_rotation)
 
         return out
 
