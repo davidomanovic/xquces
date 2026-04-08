@@ -171,22 +171,40 @@ def exact_ov_parameters_from_unitary(u: np.ndarray, nocc: int, nvirt: int) -> np
         raise ValueError(f"u must have shape {(norb, norb)}")
     if not np.allclose(u.conj().T @ u, np.eye(norb), atol=1e-10):
         raise ValueError("u must be unitary")
-    c_occ = u[:, :nocc]
-    a = c_occ[:nocc, :]
-    b = c_occ[nocc:, :]
-    if np.linalg.cond(a) > 1e12:
-        raise ValueError("occupied block is too ill-conditioned for OV gauge fixing")
-    z = b @ np.linalg.inv(a)
-    umat, svals, vh = np.linalg.svd(z, full_matrices=False)
-    theta = np.arctan(svals)
-    t = umat @ np.diag(theta) @ vh
+
+    if nocc == 0 or nvirt == 0:
+        return np.zeros(0, dtype=np.float64)
+
+    kappa = scipy.linalg.logm(u)
+    kappa = 0.5 * (kappa - kappa.conj().T)
+
+    occ_occ = kappa[:nocc, :nocc]
+    virt_virt = kappa[nocc:, nocc:]
+    occ_virt = kappa[:nocc, nocc:]
+    virt_occ = kappa[nocc:, :nocc]
+
+    block_err = max(
+        np.linalg.norm(occ_occ),
+        np.linalg.norm(virt_virt),
+        np.linalg.norm(occ_virt + virt_occ.conj().T),
+    )
+
+    if block_err > 1e-7:
+        raise ValueError(
+            "unitary is not consistent with OV chart under principal logarithm; "
+            f"block error = {block_err}"
+        )
+
+    t = np.asarray(virt_occ, dtype=np.complex128)
+
     params = np.zeros(2 * nocc * nvirt, dtype=np.float64)
     idx = 0
-    for aidx in range(nvirt):
+    for a in range(nvirt):
         for i in range(nocc):
-            params[idx] = float(np.real(t[aidx, i]))
-            params[idx + 1] = float(np.imag(t[aidx, i]))
+            params[idx] = float(np.real(t[a, i]))
+            params[idx + 1] = float(np.imag(t[a, i]))
             idx += 2
+
     return params
 
 
