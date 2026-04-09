@@ -439,18 +439,36 @@ class UCJOpSpinBalanced:
 
     def apply(self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True) -> np.ndarray:
         out = np.array(vec, dtype=np.complex128, copy=copy)
+        current_basis = np.eye(self.norb, dtype=np.complex128)
         for (same_spin, mixed_spin), orbital_rotation in zip(self.diag_coulomb_mats, self.orbital_rotations):
+            out = apply_orbital_rotation(
+                out,
+                orbital_rotation.T.conj() @ current_basis,
+                norb=self.norb,
+                nelec=nelec,
+                copy=False,
+            )
             out = gates.apply_ucj_spin_balanced(
                 out,
                 same_spin_params=same_spin,
                 mixed_spin_params=mixed_spin,
                 norb=self.norb,
                 nelec=nelec,
-                orbital_rotation=orbital_rotation,
+                time=-1.0,
+                orbital_rotation=None,
                 copy=False,
             )
-        if self.final_orbital_rotation is not None:
-            out = apply_orbital_rotation(out, self.final_orbital_rotation, norb=self.norb, nelec=nelec, copy=False)
+            current_basis = orbital_rotation
+        if self.final_orbital_rotation is None:
+            out = apply_orbital_rotation(out, current_basis, norb=self.norb, nelec=nelec, copy=False)
+        else:
+            out = apply_orbital_rotation(
+                out,
+                self.final_orbital_rotation @ current_basis,
+                norb=self.norb,
+                nelec=nelec,
+                copy=False,
+            )
         return out
 
     def _apply_unitary_(self, vec: np.ndarray, norb: int, nelec: int | tuple[int, int], copy: bool) -> np.ndarray:

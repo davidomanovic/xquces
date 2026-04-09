@@ -14,19 +14,6 @@ from xquces.ucj.native import (
 )
 
 
-def _canonicalize_internal_unitary(u: np.ndarray, tol: float = 1e-12) -> np.ndarray:
-    u = np.array(u, dtype=complex, copy=True)
-    norb = u.shape[0]
-    phases = np.ones(norb, dtype=complex)
-    for j in range(norb):
-        col = u[:, j]
-        idx = int(np.argmax(np.abs(col)))
-        val = col[idx]
-        if abs(val) > tol:
-            phases[j] = np.exp(-1j * np.angle(val))
-    return u @ np.diag(phases)
-
-
 class _GaugeReducedUCJMap:
     def __init__(self, norb: int, n_reps: int, interaction_pairs=None):
         self.norb = norb
@@ -275,7 +262,6 @@ class UCJOpGaugeFixed:
             interaction_pairs=(pairs_aa, pairs_ab),
             with_final_orbital_rotation=False,
         )
-        orbital_rotations = np.stack([_canonicalize_internal_unitary(u) for u in stock.orbital_rotations])
         final_orbital_rotation = None
         final_params = None
         if with_final_orbital_rotation:
@@ -283,7 +269,7 @@ class UCJOpGaugeFixed:
             final_orbital_rotation = ov_final_unitary(final_params, norb, cast(int, nocc))
         return UCJOpGaugeFixed(
             diag_coulomb_mats=stock.diag_coulomb_mats,
-            orbital_rotations=orbital_rotations,
+            orbital_rotations=stock.orbital_rotations,
             final_orbital_rotation=final_orbital_rotation,
             nocc=nocc,
             _final_ov_params=final_params,
@@ -308,7 +294,7 @@ class UCJOpGaugeFixed:
         gf = _GaugeReducedUCJMap(norb=norb, n_reps=self.n_reps, interaction_pairs=(pairs_aa, pairs_ab))
         stock = UCJOpSpinBalanced(
             diag_coulomb_mats=np.array(self.diag_coulomb_mats, copy=True),
-            orbital_rotations=np.stack([_canonicalize_internal_unitary(u) for u in self.orbital_rotations]),
+            orbital_rotations=np.array(self.orbital_rotations, copy=True),
             final_orbital_rotation=None,
         )
         x_full = stock.to_parameters(interaction_pairs=(pairs_aa, pairs_ab))
@@ -353,7 +339,6 @@ class UCJOpGaugeFixed:
             multi_stage_start=multi_stage_start,
             multi_stage_step=multi_stage_step,
         )
-        orbital_rotations = np.stack([_canonicalize_internal_unitary(u) for u in stock.orbital_rotations])
         final_orbital_rotation = None
         nocc = None
         final_params = None
@@ -368,7 +353,7 @@ class UCJOpGaugeFixed:
             final_orbital_rotation = ov_final_unitary(final_params, norb, nocc)
         return UCJOpGaugeFixed(
             diag_coulomb_mats=stock.diag_coulomb_mats,
-            orbital_rotations=orbital_rotations,
+            orbital_rotations=stock.orbital_rotations,
             final_orbital_rotation=final_orbital_rotation,
             nocc=nocc,
             _final_ov_params=final_params,
