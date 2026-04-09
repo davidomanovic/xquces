@@ -11,7 +11,89 @@ from xquces.ucj.native import (
     is_real_symmetric,
     is_unitary,
     validate_interaction_pairs,
+    orbital_rotation_from_t1_amplitudes,
 )
+
+
+def _canonicalize_internal_unitary(u: np.ndarray, tol: float = 1e-12) -> np.ndarray:
+    u = np.array(u, dtype=complex, copy=True)
+    norb = u.shape[0]
+    phases = np.ones(norb, dtype=complex)
+    for j in range(norb):
+        col = u[:, j]
+        idx = int(np.argmax(np.abs(col)))
+        val = col[idx]
+        if abs(val) > tol:
+            phases[j] = np.exp(-1j * np.angle(val))
+    return u @ np.diag(phases)
+
+
+def _left_complex_givens_to_zero(a: complex, b: complex, tol: float = 1e-14) -> tuple[float, float]:
+    if abs(b) <= tol:
+        return 0.0, 0.0
+    if abs(a) <= tol:
+        return float(np.pi / 2), float(np.angle(b))
+    r = np.sqrt(abs(a) ** 2 + abs(b) ** 2)
+    c = abs(a) / r
+    s = abs(b) / r
+    phi = np.angle(b) - np.angle(a)
+    theta = np.arctan2(s, c)
+    return float(theta), float(phi)
+
+
+def _apply_left_complex_givens(mat: np.ndarray, p: int, q: int, theta: float, phi: float) -> np.ndarray:
+    c = np.cos(theta)
+    s = np.sin(theta)
+    out = np.array(mat, dtype=complex, copy=True)
+    row_p = np.array(out[p, :], copy=True)
+    row_q = np.array(out[q, :], copy=True)
+    out[p, :] = c * row_p + np.exp(-1j * phi) * s * row_q
+    out[q, :] = -np.exp(1j * phi) * s * row_p + c * row_q
+    return out
+
+
+def _n_complex_givens_params(norb: int) -> int:
+    return norb * (norb - 1)
+
+
+def _complex_givens_to_unitary(params: np.ndarray, norb: int) -> np.ndarray:
+    params = np.asarray(params, dtype=float)
+    expected = _n_complex_givens_params(norb)
+    if params.shape != (expected,):
+        raise ValueError(f"Expected {(expected,)}, got {params.shape}.")
+    u = np.eye(norb, dtype=complex)
+    k = 0
+    ops: list[tuple[int, int, float, float]] = []
+    for j in range(norb):
+        for i in range(norb - 1, j, -1):
+            theta = float(params[k])
+            phi = float(params[k + 1])
+            k += 2
+            ops.append((j, i, theta, phi))
+    for j, i, theta, phi in reversed(ops):
+        c = np.cos(theta)
+        s = np.sin(theta)
+        row_j = np.array(u[j, :], copy=True)
+        row_i = np.array(u[i, :], copy=True)
+        u[j, :] = c * row_j - np.exp(-1j * phi) * s * row_i
+        u[i, :] = np.exp(1j * phi) * s * row_j + c * row_i
+    return _canonicalize_internal_unitary(u)
+
+
+def _unitary_to_complex_givens(u: np.ndarray, tol: float = 1e-12) -> np.ndarray:
+    u = _canonicalize_internal_unitary(np.asarray(u, dtype=complex), tol=tol)
+    norb = u.shape[0]
+    work = np.array(u, dtype=complex, copy=True)
+    params: list[float] = []
+    for j in range(norb):
+        for i in range(norb - 1, j, -1):
+            a = work[j, j]
+            b = work[i, j]
+            theta, phi = _left_complex_givens_to_zero(a, b, tol=tol)
+            work = _apply_left_complex_givens(work, j, i, theta, phi)
+            params.extend([theta, phi])
+    work = _canonicalize_internal_unitary(work, tol=tol)
+    return np.asarray(params, dtype=float)
 
 
 class _GaugeReducedUCJMap:
@@ -25,11 +107,9 @@ class _GaugeReducedUCJMap:
             self.pairs_ab = [(p, q) for p in range(norb) for q in range(p, norb)]
         self.n_aa = len(self.pairs_aa)
         self.n_ab = len(self.pairs_ab)
-        self.n_orb_rot_full = norb * norb
+        self.n_orb_rot_full = _n_complex_givens_params(norb)
         self.v_aa, self.n_indep_aa = self._build_gauge_basis(self.pairs_aa, diag_factor=False)
         self.v_ab, self.n_indep_ab = self._build_gauge_basis(self.pairs_ab, diag_factor=True)
-        self.phase_indices = np.zeros(0, dtype=int)
-        self.kept_indices = np.arange(self.n_orb_rot_full, dtype=int)
         self.n_orb_rot_reduced = self.n_orb_rot_full
         self.n_full_per_layer = self.n_orb_rot_full + self.n_aa + self.n_ab
         self.n_reduced_per_layer = self.n_orb_rot_reduced + self.n_indep_aa + self.n_indep_ab
@@ -57,9 +137,7 @@ class _GaugeReducedUCJMap:
         ir = 0
         iff = 0
         for _ in range(self.n_reps):
-            x_full_orb = np.zeros(self.n_orb_rot_full)
-            x_full_orb[self.kept_indices] = x_reduced[ir : ir + self.n_orb_rot_reduced]
-            x_full[iff : iff + self.n_orb_rot_full] = x_full_orb
+            x_full[iff : iff + self.n_orb_rot_full] = x_reduced[ir : ir + self.n_orb_rot_reduced]
             ir += self.n_orb_rot_reduced
             iff += self.n_orb_rot_full
             if self.n_indep_aa > 0:
@@ -77,7 +155,7 @@ class _GaugeReducedUCJMap:
         ir = 0
         iff = 0
         for _ in range(self.n_reps):
-            x_reduced[ir : ir + self.n_orb_rot_reduced] = x_full[iff : iff + self.n_orb_rot_full][self.kept_indices]
+            x_reduced[ir : ir + self.n_orb_rot_reduced] = x_full[iff : iff + self.n_orb_rot_full]
             ir += self.n_orb_rot_reduced
             iff += self.n_orb_rot_full
             if self.n_indep_aa > 0:
@@ -251,22 +329,36 @@ class UCJOpGaugeFixed:
             raise ValueError("The number of parameters passed did not match the number expected based on the function inputs. " f"Expected {n_expected} but got {len(params)}.")
         x_ucj = params[:n_ucj]
         x_final = params[n_ucj:]
+        ir = 0
+        diag_coulomb_mats = np.zeros((n_reps, 2, norb, norb), dtype=float)
+        orbital_rotations = np.zeros((n_reps, norb, norb), dtype=complex)
         x_full = gf.reduced_to_full(x_ucj)
-        stock = UCJOpSpinBalanced.from_parameters(
-            x_full,
-            norb=norb,
-            n_reps=n_reps,
-            interaction_pairs=(pairs_aa, pairs_ab),
-            with_final_orbital_rotation=False,
-        )
+        iff = 0
+        for rep in range(n_reps):
+            n_orb = gf.n_orb_rot_full
+            orb_params = x_full[iff : iff + n_orb]
+            iff += n_orb
+            orbital_rotations[rep] = _complex_givens_to_unitary(orb_params, norb)
+            if gf.n_aa > 0:
+                vals = x_full[iff : iff + gf.n_aa]
+                iff += gf.n_aa
+                rows, cols = zip(*gf.pairs_aa)
+                diag_coulomb_mats[rep, 0][rows, cols] = vals
+                diag_coulomb_mats[rep, 0][cols, rows] = vals
+            if gf.n_ab > 0:
+                vals = x_full[iff : iff + gf.n_ab]
+                iff += gf.n_ab
+                rows, cols = zip(*gf.pairs_ab)
+                diag_coulomb_mats[rep, 1][rows, cols] = vals
+                diag_coulomb_mats[rep, 1][cols, rows] = vals
         final_orbital_rotation = None
         final_params = None
         if with_final_orbital_rotation:
             final_params = np.array(x_final, dtype=float, copy=True)
             final_orbital_rotation = ov_final_unitary(final_params, norb, cast(int, nocc))
         return UCJOpGaugeFixed(
-            diag_coulomb_mats=stock.diag_coulomb_mats,
-            orbital_rotations=stock.orbital_rotations,
+            diag_coulomb_mats=diag_coulomb_mats,
+            orbital_rotations=orbital_rotations,
             final_orbital_rotation=final_orbital_rotation,
             nocc=nocc,
             _final_ov_params=final_params,
@@ -289,12 +381,19 @@ class UCJOpGaugeFixed:
         if pairs_ab is None:
             pairs_ab = triu_indices
         gf = _GaugeReducedUCJMap(norb=norb, n_reps=self.n_reps, interaction_pairs=(pairs_aa, pairs_ab))
-        stock = UCJOpSpinBalanced(
-            diag_coulomb_mats=np.array(self.diag_coulomb_mats, copy=True),
-            orbital_rotations=np.array(self.orbital_rotations, copy=True),
-            final_orbital_rotation=None,
-        )
-        x_full = stock.to_parameters(interaction_pairs=(pairs_aa, pairs_ab))
+        x_full = np.zeros(gf.n_full, dtype=float)
+        iff = 0
+        for rep in range(self.n_reps):
+            u_can = _canonicalize_internal_unitary(self.orbital_rotations[rep])
+            orb_params = _unitary_to_complex_givens(u_can)
+            x_full[iff : iff + gf.n_orb_rot_full] = orb_params
+            iff += gf.n_orb_rot_full
+            if gf.n_aa > 0:
+                x_full[iff : iff + gf.n_aa] = self.diag_coulomb_mats[rep, 0][tuple(zip(*gf.pairs_aa))]
+                iff += gf.n_aa
+            if gf.n_ab > 0:
+                x_full[iff : iff + gf.n_ab] = self.diag_coulomb_mats[rep, 1][tuple(zip(*gf.pairs_ab))]
+                iff += gf.n_ab
         x_ucj = gf.full_to_reduced(x_full)
         if self.final_orbital_rotation is None:
             return x_ucj
@@ -336,21 +435,21 @@ class UCJOpGaugeFixed:
             multi_stage_start=multi_stage_start,
             multi_stage_step=multi_stage_step,
         )
+        orbital_rotations = np.array(
+            [_canonicalize_internal_unitary(u) for u in stock.orbital_rotations],
+            dtype=complex,
+        )
         final_orbital_rotation = None
         nocc = None
         final_params = None
         if t1 is not None:
             t1 = np.asarray(t1)
             nocc = t1.shape[0]
-            norb = t1.shape[0] + t1.shape[1]
-            ncomplex = nocc * (norb - nocc)
-            final_params = np.zeros(2 * ncomplex, dtype=float)
-            final_params[:ncomplex] = np.real(t1.T).reshape(-1)
-            final_params[ncomplex:] = np.imag(t1.T).reshape(-1)
-            final_orbital_rotation = ov_final_unitary(final_params, norb, nocc)
+            final_orbital_rotation = orbital_rotation_from_t1_amplitudes(t1)
+            final_params = ov_params_from_unitary(final_orbital_rotation, nocc)
         return UCJOpGaugeFixed(
             diag_coulomb_mats=stock.diag_coulomb_mats,
-            orbital_rotations=stock.orbital_rotations,
+            orbital_rotations=orbital_rotations,
             final_orbital_rotation=final_orbital_rotation,
             nocc=nocc,
             _final_ov_params=final_params,
@@ -434,7 +533,7 @@ class GaugeFixedUCJBalancedDFSeedExact:
         return ansatz
 
     def build_parameters(self) -> tuple[UCJOpGaugeFixed, GaugeFixedUCJSpinBalancedParameterizationExact, np.ndarray]:
-        ansatz = UCJOpGaugeFixed.from_t_amplitudes(
+        stock = UCJOpSpinBalanced.from_t_amplitudes(
             np.asarray(self.t2, dtype=float),
             t1=None if self.t1 is None else np.asarray(self.t1),
             n_reps=self.n_reps,
@@ -450,12 +549,22 @@ class GaugeFixedUCJBalancedDFSeedExact:
         )
         nocc = np.asarray(self.t2).shape[0]
         param = GaugeFixedUCJSpinBalancedParameterizationExact(
-            norb=ansatz.norb,
+            norb=stock.norb,
             nocc=nocc,
-            n_reps=ansatz.n_reps,
+            n_reps=stock.n_reps,
             interaction_pairs=None,
-            with_final_orbital_rotation=ansatz.final_orbital_rotation is not None,
+            with_final_orbital_rotation=stock.final_orbital_rotation is not None,
         )
-        x0 = param.parameters_from_ansatz(ansatz)
+        seed_ansatz = UCJOpGaugeFixed(
+            diag_coulomb_mats=np.array(stock.diag_coulomb_mats, copy=True),
+            orbital_rotations=np.array(
+                [_canonicalize_internal_unitary(u) for u in stock.orbital_rotations],
+                dtype=complex,
+            ),
+            final_orbital_rotation=None if stock.final_orbital_rotation is None else np.array(stock.final_orbital_rotation, copy=True),
+            nocc=nocc if stock.final_orbital_rotation is not None else None,
+            _final_ov_params=None if stock.final_orbital_rotation is None else ov_params_from_unitary(stock.final_orbital_rotation, nocc),
+        )
+        x0 = param.parameters_from_ansatz(seed_ansatz)
         ansatz_roundtrip = param.ansatz_from_parameters(x0)
         return ansatz_roundtrip, param, x0
