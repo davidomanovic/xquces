@@ -454,7 +454,7 @@ class UCJOpSpinBalanced:
                 mixed_spin_params=mixed_spin,
                 norb=self.norb,
                 nelec=nelec,
-                time=-1.0,
+                time=1.0,
                 orbital_rotation=None,
                 copy=False,
             )
