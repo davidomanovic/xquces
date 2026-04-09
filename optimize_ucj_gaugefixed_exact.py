@@ -15,8 +15,11 @@ from threadpoolctl import threadpool_limits
 
 from xquces.hamiltonians import MolecularHamiltonianLinearOperator
 from xquces.states import hartree_fock_state
-from xquces.ucj.gaugefixed_exact import GaugeFixedUCJBalancedDFSeedExact
-
+from xquces.ucj.native import UCJOpSpinBalanced
+from xquces.ucj.gaugefixed_exact import (
+    UCJOpGaugeFixed,
+    GaugeFixedUCJSpinBalancedParameterizationExact,GaugeFixedUCJBalancedDFSeedExact
+)
 start, stop, step = 1.2, 1.2, 0.1
 bond_distance_range = np.linspace(start, stop, num=round((stop - start) / step) + 1)
 molecule = "N2"
@@ -143,6 +146,34 @@ def main():
         else:
             x0 = x0_seed
 
+        native_ucj_seed = UCJOpSpinBalanced.from_t_amplitudes(
+            np.asarray(ccsd.t2, dtype=float),
+            t1=np.asarray(ccsd.t1),
+            n_reps=1,
+        )
+
+        x_native = native_ucj_seed.to_parameters(
+            interaction_pairs=(None, None)
+        )
+
+        native_ucj_roundtrip = UCJOpSpinBalanced.from_parameters(
+            x_native,
+            norb=norb,
+            n_reps=1,
+            interaction_pairs=(None, None),
+            with_final_orbital_rotation=True,
+        )
+
+        psi_native_seed = native_ucj_seed.apply(Phi0, nelec=nelec, copy=True)
+        psi_native_rt = native_ucj_roundtrip.apply(Phi0, nelec=nelec, copy=True)
+
+        overlap = np.vdot(psi_native_seed, psi_native_rt)
+        psi_native_rt *= overlap.conjugate() / abs(overlap)
+
+        print("E_UCJ_native_seed =", ham_xq.expectation(psi_native_seed), flush=True)
+        print("E_UCJ_native_roundtrip =", ham_xq.expectation(psi_native_rt), flush=True)
+        print("native roundtrip - direct =", np.linalg.norm(psi_native_rt - psi_native_seed), flush=True)
+
         psi_seed_fresh = ucj_param.ansatz_from_parameters(x0_seed).apply(Phi0, nelec=nelec, copy=True)
         E_UCJ_seed_fresh = ham_xq.expectation(psi_seed_fresh)
 
@@ -153,7 +184,7 @@ def main():
         ucj0 = ucj_param.ansatz_from_parameters(x0)
 
         psi_seed = ucj0.apply(Phi0, nelec=nelec, copy=True)
-        print("E_UCJ_seed_fresh =", ham_xq.expectation(psi_seed), flush=True)
+        print("E_UCJ_gauge_fixed =", ham_xq.expectation(psi_seed), flush=True)
 
         x1 = ucj_param.parameters_from_ansatz(ucj0)
         ucj1 = ucj_param.ansatz_from_parameters(x1)
@@ -161,7 +192,7 @@ def main():
 
         overlap = np.vdot(psi_seed, psi_rt)
         psi_rt *= overlap.conjugate() / abs(overlap)
-        print("roundtrip - direct =", np.linalg.norm(psi_rt - psi_seed), flush=True)
+        print("gauge_fixed roundtrip - direct =", np.linalg.norm(psi_rt - psi_seed), flush=True)
         print("params:", ucj_param.n_params, flush=True)
 
         def params_to_vec(x):
@@ -206,6 +237,10 @@ def main():
             maxiter=200,
             gtol=1e-6,
             ftol=1e-12,
+            #optimize_regularization=False,
+            #optimize_variation=False,
+            #variation=0.55,
+            #regularization=5e-5,
             callback=callback,
         )
 
