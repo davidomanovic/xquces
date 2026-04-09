@@ -11,6 +11,7 @@ from xquces.ucj.native import (
     is_real_symmetric,
     is_unitary,
     validate_interaction_pairs,
+    orbital_rotation_from_t1_amplitudes,
 )
 
 
@@ -275,7 +276,7 @@ class UCJOpGaugeFixed:
             interaction_pairs=(pairs_aa, pairs_ab),
             with_final_orbital_rotation=False,
         )
-        orbital_rotations = np.stack([_canonicalize_internal_unitary(u) for u in stock.orbital_rotations])
+        orbital_rotations = np.array(stock.orbital_rotations, copy=True)
         final_orbital_rotation = None
         final_params = None
         if with_final_orbital_rotation:
@@ -308,7 +309,7 @@ class UCJOpGaugeFixed:
         gf = _GaugeReducedUCJMap(norb=norb, n_reps=self.n_reps, interaction_pairs=(pairs_aa, pairs_ab))
         stock = UCJOpSpinBalanced(
             diag_coulomb_mats=np.array(self.diag_coulomb_mats, copy=True),
-            orbital_rotations=np.stack([_canonicalize_internal_unitary(u) for u in self.orbital_rotations]),
+            orbital_rotations=np.array(self.orbital_rotations, copy=True),
             final_orbital_rotation=None,
         )
         x_full = stock.to_parameters(interaction_pairs=(pairs_aa, pairs_ab))
@@ -353,19 +354,15 @@ class UCJOpGaugeFixed:
             multi_stage_start=multi_stage_start,
             multi_stage_step=multi_stage_step,
         )
-        orbital_rotations = np.stack([_canonicalize_internal_unitary(u) for u in stock.orbital_rotations])
+        orbital_rotations = np.array(stock.orbital_rotations, copy=True)
         final_orbital_rotation = None
         nocc = None
         final_params = None
         if t1 is not None:
             t1 = np.asarray(t1)
             nocc = t1.shape[0]
-            norb = t1.shape[0] + t1.shape[1]
-            ncomplex = nocc * (norb - nocc)
-            final_params = np.zeros(2 * ncomplex, dtype=float)
-            final_params[:ncomplex] = np.real(t1.T).reshape(-1)
-            final_params[ncomplex:] = np.imag(t1.T).reshape(-1)
-            final_orbital_rotation = ov_final_unitary(final_params, norb, nocc)
+            final_orbital_rotation = orbital_rotation_from_t1_amplitudes(t1)
+            final_params = ov_params_from_unitary(final_orbital_rotation, nocc)
         return UCJOpGaugeFixed(
             diag_coulomb_mats=stock.diag_coulomb_mats,
             orbital_rotations=orbital_rotations,
@@ -452,7 +449,7 @@ class GaugeFixedUCJBalancedDFSeedExact:
         return ansatz
 
     def build_parameters(self) -> tuple[UCJOpGaugeFixed, GaugeFixedUCJSpinBalancedParameterizationExact, np.ndarray]:
-        ansatz = UCJOpGaugeFixed.from_t_amplitudes(
+        stock = UCJOpSpinBalanced.from_t_amplitudes(
             np.asarray(self.t2, dtype=float),
             t1=None if self.t1 is None else np.asarray(self.t1),
             n_reps=self.n_reps,
@@ -468,12 +465,19 @@ class GaugeFixedUCJBalancedDFSeedExact:
         )
         nocc = np.asarray(self.t2).shape[0]
         param = GaugeFixedUCJSpinBalancedParameterizationExact(
-            norb=ansatz.norb,
+            norb=stock.norb,
             nocc=nocc,
-            n_reps=ansatz.n_reps,
+            n_reps=stock.n_reps,
             interaction_pairs=None,
-            with_final_orbital_rotation=ansatz.final_orbital_rotation is not None,
+            with_final_orbital_rotation=stock.final_orbital_rotation is not None,
         )
-        x0 = param.parameters_from_ansatz(ansatz)
+        seed_ansatz = UCJOpGaugeFixed(
+            diag_coulomb_mats=np.array(stock.diag_coulomb_mats, copy=True),
+            orbital_rotations=np.array(stock.orbital_rotations, copy=True),
+            final_orbital_rotation=None if stock.final_orbital_rotation is None else np.array(stock.final_orbital_rotation, copy=True),
+            nocc=nocc if stock.final_orbital_rotation is not None else None,
+            _final_ov_params=None if stock.final_orbital_rotation is None else ov_params_from_unitary(stock.final_orbital_rotation, nocc),
+        )
+        x0 = param.parameters_from_ansatz(seed_ansatz)
         ansatz_roundtrip = param.ansatz_from_parameters(x0)
         return ansatz_roundtrip, param, x0
