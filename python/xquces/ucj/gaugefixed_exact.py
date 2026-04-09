@@ -28,12 +28,9 @@ class _GaugeReducedUCJMap:
         self.n_orb_rot_full = norb * norb
         self.v_aa, self.n_indep_aa = self._build_gauge_basis(self.pairs_aa, diag_factor=False)
         self.v_ab, self.n_indep_ab = self._build_gauge_basis(self.pairs_ab, diag_factor=True)
-        n_triu_strict = norb * (norb - 1) // 2
-        rows_full, cols_full = np.triu_indices(norb, k=0)
-        diag_positions_in_imag = [idx for idx, (r, c) in enumerate(zip(rows_full, cols_full)) if r == c]
-        self.phase_indices = np.array([n_triu_strict + p for p in diag_positions_in_imag], dtype=int)
-        self.kept_indices = np.setdiff1d(np.arange(self.n_orb_rot_full), self.phase_indices)
-        self.n_orb_rot_reduced = len(self.kept_indices)
+        self.phase_indices = np.zeros(0, dtype=int)
+        self.kept_indices = np.arange(self.n_orb_rot_full, dtype=int)
+        self.n_orb_rot_reduced = self.n_orb_rot_full
         self.n_full_per_layer = self.n_orb_rot_full + self.n_aa + self.n_ab
         self.n_reduced_per_layer = self.n_orb_rot_reduced + self.n_indep_aa + self.n_indep_ab
         self.n_full = n_reps * self.n_full_per_layer
