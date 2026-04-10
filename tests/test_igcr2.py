@@ -516,6 +516,19 @@ def test_restricted_parameters_from_ucj_ansatz_matches_state():
     _assert_same_state_up_to_phase(psi_ref, psi_param, atol=1e-10)
 
 
+def test_balanced_parameters_from_ucj_ansatz_matches_stock_ucj_state():
+    ucj, _, _ = _balanced_ucj_seed(seed=2103)
+    norb = 4
+    nocc = 2
+    nelec = (2, 2)
+    phi0 = hartree_fock_state(norb, nelec)
+    param = igcr2.IGCR2SpinBalancedParameterization(norb=norb, nocc=nocc)
+    x = param.parameters_from_ucj_ansatz(ucj)
+    psi_param = param.ansatz_from_parameters(x).apply(phi0, nelec=nelec, copy=True)
+    psi_ref = ucj.apply(phi0, nelec=nelec, copy=True)
+    _assert_same_state_up_to_phase(psi_ref, psi_param, atol=1e-10)
+
+
 def test_restricted_parameters_from_ansatz_from_ucj_roundtrip_state():
     ucj, _, _ = _restricted_ucj_seed(seed=2102)
     norb = 4
