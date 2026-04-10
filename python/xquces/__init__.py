@@ -1,11 +1,7 @@
 from xquces.states import hartree_fock_state
 from xquces.hamiltonians import MolecularHamiltonianLinearOperator
 from xquces.sqd import run_sqd_from_statevector
-from xquces.igcr2.gates import apply_igcr2, apply_igcr2_diagonal
-from xquces.igcr2.parameterization import (
-    IGCR2Parameterization,
-    igcr2_params_from_ucj,
-)
+from xquces.igcr2.parameterization import IGCR2Parameterization, igcr2_params_from_ucj
 from xquces.ucj._unitary import (
     AntiHermitianUnitaryChart,
     antihermitian_from_parameters,

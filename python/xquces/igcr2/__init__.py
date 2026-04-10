@@ -1,14 +1,5 @@
-"""Irreducible GCR-2 ansatz implementation."""
+"""Irreducible GCR-2 ansatz (spin-balanced)."""
 
-from xquces.igcr2.gates import apply_igcr2, apply_igcr2_diagonal
-from xquces.igcr2.parameterization import (
-    IGCR2Parameterization,
-    igcr2_params_from_ucj,
-)
+from xquces.igcr2.parameterization import IGCR2Parameterization, igcr2_params_from_ucj
 
-__all__ = [
-    "apply_igcr2",
-    "apply_igcr2_diagonal",
-    "IGCR2Parameterization",
-    "igcr2_params_from_ucj",
-]
+__all__ = ["IGCR2Parameterization", "igcr2_params_from_ucj"]
