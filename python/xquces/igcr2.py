@@ -224,17 +224,20 @@ class _SameSpinPairGaugeMap:
             a[k, p] = 1.0
             a[k, q] = 1.0
         if n_pairs == 0:
+            u = np.zeros((0, 0), dtype=np.float64)
             v = np.zeros((0, 0), dtype=np.float64)
         else:
-            u, s, _ = np.linalg.svd(a, full_matrices=True)
+            u_full, s, _ = np.linalg.svd(a, full_matrices=True)
             rank = int(np.sum(s > 1e-10))
-            v = np.array(u[:, rank:], copy=True)
+            u = np.array(u_full[:, :rank], copy=True)
+            v = np.array(u_full[:, rank:], copy=True)
             for j in range(v.shape[1]):
                 col = v[:, j]
                 idx = int(np.argmax(np.abs(col)))
                 if abs(col[idx]) > 1e-14 and col[idx] < 0:
                     v[:, j] *= -1.0
         object.__setattr__(self, "_a", a)
+        object.__setattr__(self, "_u", u)
         object.__setattr__(self, "_v", v)
 
     @property
@@ -246,6 +249,10 @@ class _SameSpinPairGaugeMap:
         return self._v
 
     @property
+    def u(self) -> np.ndarray:
+        return self._u
+
+    @property
     def n_full(self) -> int:
         return self.a.shape[0]
 
@@ -253,17 +260,33 @@ class _SameSpinPairGaugeMap:
     def n_reduced(self) -> int:
         return self.v.shape[1]
 
+    @property
+    def n_gauge(self) -> int:
+        return self.u.shape[1]
+
     def reduced_to_full(self, x_reduced: np.ndarray) -> np.ndarray:
         x_reduced = np.asarray(x_reduced, dtype=np.float64)
         if self.n_full == 0:
             return np.zeros(0, dtype=np.float64)
         return self.v @ x_reduced
 
+    def gauge_to_full(self, x_gauge: np.ndarray) -> np.ndarray:
+        x_gauge = np.asarray(x_gauge, dtype=np.float64)
+        if self.n_full == 0:
+            return np.zeros(0, dtype=np.float64)
+        return self.u @ x_gauge
+
     def full_to_reduced(self, x_full: np.ndarray) -> np.ndarray:
         x_full = np.asarray(x_full, dtype=np.float64)
         if self.n_full == 0:
             return np.zeros(0, dtype=np.float64)
         return self.v.T @ x_full
+
+    def full_to_gauge(self, x_full: np.ndarray) -> np.ndarray:
+        x_full = np.asarray(x_full, dtype=np.float64)
+        if self.n_full == 0:
+            return np.zeros(0, dtype=np.float64)
+        return self.u.T @ x_full
 
     def gauge_lambda(self, x_full: np.ndarray) -> np.ndarray:
         x_full = np.asarray(x_full, dtype=np.float64)
@@ -575,6 +598,10 @@ class IGCR2SpinBalancedParameterization:
         )
 
     @property
+    def _same_mixed_identical(self):
+        return self.same_spin_indices == self.mixed_spin_indices
+
+    @property
     def n_left_orbital_rotation_params(self):
         return self.left_orbital_chart.n_params(self.norb)
 
@@ -591,12 +618,16 @@ class IGCR2SpinBalancedParameterization:
         return len(self.same_spin_indices)
 
     @property
+    def n_mixed_spin_params(self):
+        return len(self.mixed_spin_indices)
+
+    @property
     def _n_same_spin_reduced_params(self):
         return self._same_spin_gauge_map.n_reduced
 
     @property
-    def n_mixed_spin_params(self):
-        return len(self.mixed_spin_indices)
+    def _n_same_spin_gauge_params(self):
+        return self._same_spin_gauge_map.n_gauge
 
     @property
     def n_right_orbital_rotation_params(self):
@@ -604,6 +635,14 @@ class IGCR2SpinBalancedParameterization:
 
     @property
     def n_params(self):
+        if self._same_mixed_identical:
+            return (
+                self.n_left_orbital_rotation_params
+                + self._n_same_spin_reduced_params
+                + self._n_same_spin_reduced_params
+                + self._n_same_spin_gauge_params
+                + self.n_right_orbital_rotation_params
+            )
         return (
             self.n_left_orbital_rotation_params
             + self.n_same_diag_params
@@ -621,13 +660,34 @@ class IGCR2SpinBalancedParameterization:
         n = self.n_left_orbital_rotation_params
         left = self.left_orbital_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
         idx += n
-        n = self._n_same_spin_reduced_params
-        same_full = self._same_spin_gauge_map.reduced_to_full(params[idx:idx + n])
-        same = _symmetric_matrix_from_values(same_full, self.norb, self.same_spin_indices)
-        idx += n
-        n = self.n_mixed_spin_params
-        mixed = _symmetric_matrix_from_values(params[idx:idx + n], self.norb, self.mixed_spin_indices)
-        idx += n
+        if self._same_mixed_identical:
+            inv_sqrt2 = 1.0 / np.sqrt(2.0)
+            n = self._n_same_spin_reduced_params
+            charge_phys = np.asarray(params[idx:idx + n], dtype=np.float64)
+            idx += n
+            spin_phys = np.asarray(params[idx:idx + n], dtype=np.float64)
+            idx += n
+            n = self._n_same_spin_gauge_params
+            mixed_gauge = np.asarray(params[idx:idx + n], dtype=np.float64)
+            idx += n
+            same_phys = inv_sqrt2 * (charge_phys + spin_phys)
+            mixed_phys = inv_sqrt2 * (charge_phys - spin_phys)
+            same_full = self._same_spin_gauge_map.reduced_to_full(same_phys)
+            mixed_full = (
+                self._same_spin_gauge_map.reduced_to_full(mixed_phys)
+                + self._same_spin_gauge_map.gauge_to_full(mixed_gauge)
+            )
+            same = _symmetric_matrix_from_values(same_full, self.norb, self.same_spin_indices)
+            mixed = _symmetric_matrix_from_values(mixed_full, self.norb, self.mixed_spin_indices)
+        else:
+            n = self._n_same_spin_reduced_params
+            same_full = self._same_spin_gauge_map.reduced_to_full(params[idx:idx + n])
+            same = _symmetric_matrix_from_values(same_full, self.norb, self.same_spin_indices)
+            idx += n
+            n = self.n_mixed_spin_params
+            mixed = _symmetric_matrix_from_values(params[idx:idx + n], self.norb, self.mixed_spin_indices)
+            idx += n
+
         n = self.n_right_orbital_rotation_params
         right = ov_final_unitary(params[idx:idx + n], self.norb, self.nocc)
         return IGCR2Ansatz(
@@ -667,12 +727,27 @@ class IGCR2SpinBalancedParameterization:
         n = self.n_left_orbital_rotation_params
         out[idx:idx + n] = self.left_orbital_chart.parameters_from_unitary(left_eff)
         idx += n
-        n = self._n_same_spin_reduced_params
-        out[idx:idx + n] = self._same_spin_gauge_map.full_to_reduced(same_full)
-        idx += n
-        n = self.n_mixed_spin_params
-        out[idx:idx + n] = np.asarray([mixed_eff[p, q] for p, q in self.mixed_spin_indices], dtype=np.float64)
-        idx += n
+        if self._same_mixed_identical:
+            inv_sqrt2 = 1.0 / np.sqrt(2.0)
+            mixed_full = np.asarray([mixed_eff[p, q] for p, q in self.mixed_spin_indices], dtype=np.float64)
+            same_phys = self._same_spin_gauge_map.full_to_reduced(same_full)
+            mixed_phys = self._same_spin_gauge_map.full_to_reduced(mixed_full)
+            mixed_gauge = self._same_spin_gauge_map.full_to_gauge(mixed_full)
+            n = self._n_same_spin_reduced_params
+            out[idx:idx + n] = inv_sqrt2 * (same_phys + mixed_phys)
+            idx += n
+            out[idx:idx + n] = inv_sqrt2 * (same_phys - mixed_phys)
+            idx += n
+            n = self._n_same_spin_gauge_params
+            out[idx:idx + n] = mixed_gauge
+            idx += n
+        else:
+            n = self._n_same_spin_reduced_params
+            out[idx:idx + n] = self._same_spin_gauge_map.full_to_reduced(same_full)
+            idx += n
+            n = self.n_mixed_spin_params
+            out[idx:idx + n] = np.asarray([mixed_eff[p, q] for p, q in self.mixed_spin_indices], dtype=np.float64)
+            idx += n
         n = self.n_right_orbital_rotation_params
         out[idx:idx + n] = exact_reference_ov_params_from_unitary(ansatz.right, self.nocc)
         return out
