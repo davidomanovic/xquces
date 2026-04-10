@@ -7,32 +7,25 @@ import pyscf.gto
 import pyscf.scf
 import pyscf.mcscf
 import pyscf.cc
-import pyscf.ci
-from pyscf import lib
 from scipy.sparse.linalg import LinearOperator
 from ffsim.optimize import minimize_linear_method
+from threadpoolctl import threadpool_limits
 
-from xquces.gcr import GCRSpinBalancedParameterization
+from xquces.igcr2 import IGCR2Parameterization, igcr2_params_from_ucj
 from xquces.hamiltonians import MolecularHamiltonianLinearOperator
 from xquces.states import hartree_fock_state
-from xquces.ucj.init import UCJBalancedDFSeed
+from xquces.ucj.init import GaugeFixedUCJBalancedDFSeed
 
 start, stop, step = 1.2, 1.2, 0.1
 bond_distance_range = np.linspace(start, stop, num=round((stop - start) / step) + 1)
-n_f = 2
 molecule = "N2"
 basis = "sto-6g"
 
-OUT_CSV = Path(f"output/{molecule}_{basis}_gcr_sr.csv")
-TRACE_CSV = Path(f"output/{molecule}_{basis}_gcr_sr_trace.csv")
+OUT_CSV = Path(f"output/{molecule}_{basis}_igcr2.csv")
+TRACE_CSV = Path(f"output/{molecule}_{basis}_igcr2_trace.csv")
 
 pyscf.lib.num_threads(48)
 
-def phase_aligned_diff(psi, phi):
-    overlap = np.vdot(phi, psi)
-    if abs(overlap) < 1e-14:
-        return np.linalg.norm(psi - phi)
-    return np.linalg.norm(psi - overlap / abs(overlap) * phi)
 
 def append_row_csv(path, row_dict, header):
     new_file = not path.exists()
@@ -70,24 +63,14 @@ def main():
         TRACE_CSV.unlink()
 
     header = [
-        "R",
-        "E_FCI",
-        "E_HF",
-        "E_CCSD",
-        "E_GCR_seed",
-        "E_GCR_opt",
+        "R", "E_FCI", "E_HF", "E_CCSD",
+        "E_iGCR2_seed", "E_iGCR2_start", "E_iGCR2_opt",
     ]
-    trace_header = [
-        "R",
-        "iter",
-        "energy",
-        "max_abs_grad",
-        "cond",
-    ]
+    trace_header = ["R", "iter", "energy", "max_abs_grad", "cond", "reg"]
 
     print(",".join(header), flush=True)
 
-    x_prev1 = None
+    x_prev = None
     prev_ccsd_t1 = None
     prev_ccsd_t2 = None
 
@@ -113,18 +96,10 @@ def main():
         cas = pyscf.mcscf.RCASCI(scf, ncas=norb, nelecas=nelec)
         mo_coeff = cas.sort_mo(active_space, base=0)
 
-        cisd = pyscf.ci.RCISD(
-            scf, frozen=[i for i in range(mol.nao_nr()) if i not in active_space]
-        )
-        cisd.kernel()
-
         ccsd = pyscf.cc.RCCSD(
             scf, frozen=[i for i in range(mol.nao_nr()) if i not in active_space]
         )
-        ccsd.kernel(
-            t1=prev_ccsd_t1,
-            t2=prev_ccsd_t2,
-        )
+        ccsd.kernel(t1=prev_ccsd_t1, t2=prev_ccsd_t2)
         prev_ccsd_t1 = np.array(ccsd.t1, copy=True)
         prev_ccsd_t2 = np.array(ccsd.t2, copy=True)
 
@@ -135,46 +110,43 @@ def main():
         H = linear_operator_from_xquces_hamiltonian(ham_xq)
         Phi0 = hartree_fock_state(norb, nelec)
 
-        ucj_seed = UCJBalancedDFSeed(
-            t2=ccsd.t2,
-            t1=ccsd.t1,
-            n_reps=1,
+        # --- UCJ seed → iGCR-2 ---
+        ucj_seed = GaugeFixedUCJBalancedDFSeed(
+            t2=ccsd.t2, t1=ccsd.t1, n_reps=1,
         ).build_ansatz()
 
-        gcr_param = GCRSpinBalancedParameterization(
-            norb=norb,
-            nocc=n_alpha,
-        )
+        igcr2 = IGCR2Parameterization(norb=norb, nocc=n_alpha)
+        x0_seed = igcr2_params_from_ucj(ucj_seed, nocc=n_alpha, parameterization=igcr2)
 
-        x0 = gcr_param.parameters_from_ucj_ansatz(ucj_seed)
-        gcr_seed = gcr_param.ansatz_from_parameters(x0)
+        print(f"iGCR-2 params: {igcr2.n_params} "
+              f"(left={igcr2.n_left_params} diag={igcr2.n_beta_params + igcr2.n_gamma_params} "
+              f"right={igcr2.n_right_params})", flush=True)
 
-        phi0 = hartree_fock_state(norb, nelec)
-
-        ucj_seed_ansatz = UCJBalancedDFSeed(
-            t2=ccsd.t2,
-            t1=ccsd.t1,
-            n_reps=1,
-        ).build_ansatz()
-
-        gcr_param = GCRSpinBalancedParameterization(
-            norb=norb, nocc=n_alpha
-        )
-
-        x0_seed = gcr_param.parameters_from_ucj_ansatz(ucj_seed_ansatz)
-        
-        if x_prev1 is not None and x_prev1.shape == x0_seed.shape:
-            x0 = x_prev1
+        if x_prev is not None and x_prev.shape == x0_seed.shape:
+            x0 = x_prev
         else:
             x0 = x0_seed
 
-        print("params:", len(x0), flush=True)
+        psi_seed = igcr2.apply(x0_seed, Phi0, nelec)
+        E_seed = ham_xq.expectation(psi_seed)
 
-        psi_seed = gcr_param.ansatz_from_parameters(x0_seed).apply(Phi0, nelec=nelec, copy=True)
-        E_GCR_seed = ham_xq.expectation(psi_seed)
+        psi_start = igcr2.apply(x0, Phi0, nelec)
+        E_start = ham_xq.expectation(psi_start)
 
+        print(f"E_iGCR2_seed  = {E_seed:.12f}  (projected from spin-balanced UCJ)", flush=True)
+        print(f"E_iGCR2_start = {E_start:.12f}", flush=True)
+
+        # Roundtrip check
+        d = igcr2.unpack(x0_seed)
+        x_rt = igcr2.pack(**d)
+        psi_rt = igcr2.apply(x_rt, Phi0, nelec)
+        overlap = np.vdot(psi_seed, psi_rt)
+        psi_rt *= overlap.conjugate() / abs(overlap)
+        print(f"roundtrip error = {np.linalg.norm(psi_rt - psi_seed):.2e}", flush=True)
+
+        # --- Optimize ---
         def params_to_vec(x):
-            return gcr_param.ansatz_from_parameters(x).apply(Phi0, nelec=nelec, copy=True)
+            return igcr2.apply(x, Phi0, nelec)
 
         it_counter = {"k": 0}
 
@@ -182,19 +154,18 @@ def main():
             it_counter["k"] += 1
             energy = float(intermediate_result.fun)
 
+            gmax = float("nan")
             if hasattr(intermediate_result, "jac") and intermediate_result.jac is not None:
                 gmax = float(np.max(np.abs(intermediate_result.jac)))
-            else:
-                gmax = float("nan")
 
+            cond = float("nan")
             if hasattr(intermediate_result, "overlap_mat") and intermediate_result.overlap_mat is not None:
                 try:
                     cond = float(np.linalg.cond(intermediate_result.overlap_mat))
                 except np.linalg.LinAlgError:
                     cond = float("inf")
-            else:
-                cond = float("nan")
 
+            reg = getattr(intermediate_result, "regularization", np.nan)
             append_row_csv(
                 TRACE_CSV,
                 {
@@ -203,6 +174,7 @@ def main():
                     "energy": f"{energy:.12f}",
                     "max_abs_grad": f"{gmax:.12e}",
                     "cond": f"{cond:.12e}",
+                    "reg": f"{reg:.12e}",
                 },
                 trace_header,
             )
@@ -211,25 +183,23 @@ def main():
             params_to_vec,
             H,
             x0=x0,
-            maxiter=300,
+            maxiter=200,
             gtol=1e-6,
             ftol=1e-12,
             callback=callback,
         )
 
-        x_prev1 = result.x.copy()
-        E_GCR_opt = float(result.fun)
-
-        E_HF = scf.e_tot
-        E_FCI = cas.e_tot
+        x_prev = result.x.copy()
+        E_opt = float(result.fun)
 
         row = {
             "R": f"{R:.6f}",
-            "E_FCI": f"{E_FCI:.12f}",
-            "E_HF": f"{E_HF:.12f}",
+            "E_FCI": f"{cas.e_tot:.12f}",
+            "E_HF": f"{scf.e_tot:.12f}",
             "E_CCSD": f"{ccsd.e_tot:.12f}",
-            "E_GCR_seed": f"{E_GCR_seed:.12f}",
-            "E_GCR_opt": f"{E_GCR_opt:.12f}",
+            "E_iGCR2_seed": f"{E_seed:.12f}",
+            "E_iGCR2_start": f"{E_start:.12f}",
+            "E_iGCR2_opt": f"{E_opt:.12f}",
         }
         print(",".join([row[k] for k in header]), flush=True)
         append_row_csv(OUT_CSV, row, header)
@@ -239,4 +209,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    pyscf.lib.num_threads(1)
+    with threadpool_limits(limits=1):
+        main()
