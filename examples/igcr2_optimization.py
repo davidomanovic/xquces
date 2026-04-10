@@ -17,7 +17,7 @@ from xquces.hamiltonians import MolecularHamiltonianLinearOperator
 from xquces.states import hartree_fock_state
 from xquces.ucj.init import UCJBalancedDFSeed
 
-start, stop, step = 1.2, 1.2, 0.1
+start, stop, step = 0.9, 3.5, 0.1
 bond_distance_range = np.linspace(start, stop, num=round((stop - start) / step) + 1)
 n_f = 2
 molecule = "N2"
@@ -155,7 +155,7 @@ def main():
         else:
             x0 = x0_seed
 
-        print("params:", len(x0), flush=True)
+        # print("params:", len(x0), flush=True)
 
         psi_seed = igcr2_param.ansatz_from_parameters(x0_seed).apply(Phi0, nelec=nelec, copy=True)
         E_iGCR2_seed = ham_xq.expectation(psi_seed)
@@ -198,7 +198,7 @@ def main():
             params_to_vec,
             H,
             x0=x0,
-            maxiter=300,
+            maxiter=100,
             gtol=1e-6,
             ftol=1e-12,
             callback=callback,
