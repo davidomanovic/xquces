@@ -17,7 +17,7 @@ from xquces.hamiltonians import MolecularHamiltonianLinearOperator
 from xquces.states import hartree_fock_state
 from xquces.ucj.init import UCJBalancedDFSeed
 
-start, stop, step = 1.2, 1.2, 0.1
+start, stop, step = 0.9, 3.5, 0.1
 bond_distance_range = np.linspace(start, stop, num=round((stop - start) / step) + 1)
 n_f = 2
 molecule = "N2"
@@ -90,6 +90,9 @@ def main():
     print(",".join(header), flush=True)
 
     x_prev1 = None
+    prev_mol = None
+    prev_active_mo_coeff = None
+    prev_igcr2_param = None
     prev_ccsd_t1 = None
     prev_ccsd_t2 = None
 
@@ -114,6 +117,10 @@ def main():
 
         cas = pyscf.mcscf.RCASCI(scf, ncas=norb, nelecas=nelec)
         mo_coeff = cas.sort_mo(active_space, base=0)
+        active_mo_coeff = np.asarray(
+            mo_coeff[:, cas.ncore : cas.ncore + norb],
+            dtype=np.complex128,
+        )
 
         cisd = pyscf.ci.RCISD(
             scf, frozen=[i for i in range(mol.nao_nr()) if i not in active_space]
@@ -150,12 +157,25 @@ def main():
 
         x0_seed = igcr2_param.parameters_from_ucj_ansatz(ucj_seed)
 
-        if x_prev1 is not None and x_prev1.shape == x0_seed.shape:
-            x0 = x_prev1
+        if (
+            x_prev1 is not None
+            and prev_mol is not None
+            and prev_active_mo_coeff is not None
+            and prev_igcr2_param is not None
+            and x_prev1.shape == x0_seed.shape
+        ):
+            ao_overlap = pyscf.gto.intor_cross("int1e_ovlp", prev_mol, mol)
+            orbital_overlap = prev_active_mo_coeff.conj().T @ ao_overlap @ active_mo_coeff
+            x0 = igcr2_param.transfer_parameters_from(
+                x_prev1,
+                previous_parameterization=prev_igcr2_param,
+                orbital_overlap=orbital_overlap,
+                block_diagonal=True,
+            )
         else:
             x0 = x0_seed
 
-        print("params:", len(x0), flush=True)
+        # print("params:", len(x0), flush=True)
 
         psi_seed = igcr2_param.ansatz_from_parameters(x0_seed).apply(Phi0, nelec=nelec, copy=True)
         E_iGCR2_seed = ham_xq.expectation(psi_seed)
@@ -198,13 +218,16 @@ def main():
             params_to_vec,
             H,
             x0=x0,
-            maxiter=300,
+            maxiter=100,
             gtol=1e-6,
             ftol=1e-12,
             callback=callback,
         )
 
         x_prev1 = result.x.copy()
+        prev_mol = mol
+        prev_active_mo_coeff = active_mo_coeff.copy()
+        prev_igcr2_param = igcr2_param
         E_iGCR2_opt = float(result.fun)
 
         E_HF = scf.e_tot

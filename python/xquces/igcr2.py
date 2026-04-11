@@ -6,6 +6,7 @@ from typing import Callable
 
 import numpy as np
 import scipy.linalg
+import scipy.optimize
 
 from xquces.gates import apply_gcr_spin_balanced, apply_gcr_spin_restricted
 from xquces.gcr.model import GCRAnsatz, gcr_from_ucj_ansatz
@@ -54,62 +55,206 @@ def _diag_unitary(phases: np.ndarray) -> np.ndarray:
     return np.diag(np.exp(1j * np.asarray(phases, dtype=np.float64)))
 
 
-def _antihermitian_from_parameters(params: np.ndarray, norb: int) -> np.ndarray:
+def _orbital_relabeling_unitary(
+    old_for_new: np.ndarray,
+    phases: np.ndarray | None = None,
+) -> np.ndarray:
+    old_for_new = np.asarray(old_for_new, dtype=np.int64)
+    if old_for_new.ndim != 1:
+        raise ValueError("old_for_new must be a one-dimensional permutation")
+    norb = old_for_new.shape[0]
+    if sorted(old_for_new.tolist()) != list(range(norb)):
+        raise ValueError("old_for_new must be a permutation of orbital indices")
+    if phases is None:
+        phases_arr = np.ones(norb, dtype=np.complex128)
+    else:
+        phases_arr = np.asarray(phases, dtype=np.complex128)
+        if phases_arr.shape != (norb,):
+            raise ValueError("phases must have shape (norb,)")
+        bad = np.abs(phases_arr) <= 1e-14
+        phases_arr = np.where(bad, 1.0 + 0.0j, phases_arr / np.abs(phases_arr))
+    relabel = np.zeros((norb, norb), dtype=np.complex128)
+    relabel[old_for_new, np.arange(norb)] = phases_arr
+    return relabel
+
+
+def orbital_relabeling_from_overlap(
+    overlap: np.ndarray,
+    nocc: int | None = None,
+    block_diagonal: bool = True,
+) -> tuple[np.ndarray, np.ndarray]:
+    overlap = np.asarray(overlap, dtype=np.complex128)
+    _assert_square_matrix(overlap, "overlap")
+    norb = overlap.shape[0]
+    if nocc is None:
+        blocks = [(0, norb)]
+    else:
+        if not (0 <= nocc <= norb):
+            raise ValueError("nocc must satisfy 0 <= nocc <= norb")
+        blocks = [(0, nocc), (nocc, norb)] if block_diagonal else [(0, norb)]
+
+    old_for_new = np.empty(norb, dtype=np.int64)
+    phases = np.ones(norb, dtype=np.complex128)
+    for start, stop in blocks:
+        if start == stop:
+            continue
+        sub = overlap[start:stop, start:stop]
+        old_rows, new_cols = scipy.optimize.linear_sum_assignment(-np.abs(sub))
+        for old_local, new_local in zip(old_rows, new_cols):
+            old_idx = start + int(old_local)
+            new_idx = start + int(new_local)
+            old_for_new[new_idx] = old_idx
+            val = overlap[old_idx, new_idx]
+            if abs(val) > 1e-14:
+                phases[new_idx] = val / abs(val)
+    return old_for_new, phases
+
+
+def _zero_diag_antihermitian_from_parameters(
+    params: np.ndarray,
+    norb: int,
+    pairs: list[tuple[int, int]] | None = None,
+) -> np.ndarray:
     params = np.asarray(params, dtype=np.float64)
-    expected = norb * norb
+    if pairs is None:
+        pairs = list(itertools.combinations(range(norb), 2))
+    expected = 2 * len(pairs)
     if params.shape != (expected,):
         raise ValueError(f"Expected {(expected,)}, got {params.shape}.")
-    n_strict = norb * (norb - 1) // 2
-    re = params[:n_strict]
-    im = params[n_strict : 2 * n_strict]
-    diag = params[2 * n_strict :]
-    k = np.zeros((norb, norb), dtype=np.complex128)
-    rows, cols = np.triu_indices(norb, k=1)
-    z = re + 1j * im
-    k[rows, cols] = z
-    k[cols, rows] = -np.conjugate(z)
-    k[np.diag_indices(norb)] = 1j * diag
-    return k
+    out = np.zeros((norb, norb), dtype=np.complex128)
+    idx = 0
+    for p, q in pairs:
+        z = params[idx] + 1j * params[idx + 1]
+        idx += 2
+        out[p, q] = z
+        out[q, p] = -np.conjugate(z)
+    return out
 
 
-def _parameters_from_antihermitian(k: np.ndarray) -> np.ndarray:
-    k = np.asarray(k, dtype=np.complex128)
-    _assert_square_matrix(k, "k")
-    if not np.allclose(k.conj().T, -k, atol=1e-10):
-        raise ValueError("k must be antihermitian")
-    norb = k.shape[0]
-    rows, cols = np.triu_indices(norb, k=1)
-    z = k[rows, cols]
-    diag = np.imag(np.diag(k))
-    return np.concatenate([np.real(z), np.imag(z), diag]).astype(np.float64, copy=False)
+def _parameters_from_zero_diag_antihermitian(
+    kappa: np.ndarray,
+    pairs: list[tuple[int, int]] | None = None,
+) -> np.ndarray:
+    kappa = np.asarray(kappa, dtype=np.complex128)
+    _assert_square_matrix(kappa, "kappa")
+    if not np.allclose(kappa.conj().T, -kappa, atol=1e-10):
+        raise ValueError("kappa must be antihermitian")
+    norb = kappa.shape[0]
+    if pairs is None:
+        pairs = list(itertools.combinations(range(norb), 2))
+    out = np.zeros(2 * len(pairs), dtype=np.float64)
+    idx = 0
+    for p, q in pairs:
+        z = kappa[p, q]
+        out[idx] = float(np.real(z))
+        out[idx + 1] = float(np.imag(z))
+        idx += 2
+    return out
 
 
-def _left_unitary_from_parameters(params: np.ndarray, norb: int) -> np.ndarray:
-    return np.asarray(scipy.linalg.expm(_antihermitian_from_parameters(params, norb)), dtype=np.complex128)
+def _principal_antihermitian_log(u: np.ndarray) -> np.ndarray:
+    kappa = scipy.linalg.logm(u)
+    kappa = np.asarray(kappa, dtype=np.complex128)
+    return 0.5 * (kappa - kappa.conj().T)
 
 
-def _left_parameters_from_unitary(u: np.ndarray) -> np.ndarray:
+def _left_phase_fix_initial_guesses(u: np.ndarray) -> list[np.ndarray]:
+    norb = u.shape[0]
+    guesses = [np.zeros(norb, dtype=np.float64)]
+    diag = np.diag(u)
+    safe_diag = np.where(np.abs(diag) > 1e-14, diag, 1.0 + 0.0j)
+    guesses.append(-np.angle(safe_diag))
+    col_phases = np.zeros(norb, dtype=np.float64)
+    for j in range(norb):
+        col = u[:, j]
+        idx = int(np.argmax(np.abs(col)))
+        val = col[idx]
+        if abs(val) > 1e-14:
+            col_phases[j] = -np.angle(val)
+    guesses.append(col_phases)
+    return guesses
+
+
+def _left_parameters_and_right_phase_from_unitary(
+    u: np.ndarray,
+    pairs: list[tuple[int, int]] | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    # Fix the exact middle gauge L D J R == L J D R by choosing D so that
+    # L D has a zero-diagonal anti-Hermitian logarithm.  The returned phase is
+    # applied to the right OV chart, so no left diagonal phase remains live.
     u = np.asarray(u, dtype=np.complex128)
     _assert_square_matrix(u, "u")
     norb = u.shape[0]
     if not np.allclose(u.conj().T @ u, np.eye(norb), atol=1e-10):
         raise ValueError("u must be unitary")
-    k = scipy.linalg.logm(u)
-    k = 0.5 * (k - k.conj().T)
-    k[np.diag_indices(norb)] = 1j * np.imag(np.diag(k))
-    return _parameters_from_antihermitian(k)
+
+    def residual(column_phase: np.ndarray) -> np.ndarray:
+        shifted = u @ _diag_unitary(column_phase)
+        kappa = _principal_antihermitian_log(shifted)
+        return np.imag(np.diag(kappa))
+
+    best_phase = None
+    best_norm = np.inf
+    for guess in _left_phase_fix_initial_guesses(u):
+        result = scipy.optimize.root(
+            residual,
+            guess,
+            method="hybr",
+            options={"xtol": 1e-11, "maxfev": 2000},
+        )
+        value = np.linalg.norm(residual(result.x))
+        if value < best_norm:
+            best_norm = value
+            best_phase = np.asarray(result.x, dtype=np.float64)
+        if value < 1e-11:
+            break
+    if best_phase is None or best_norm > 1e-8:
+        raise ValueError("could not phase-fix left unitary into zero-diagonal chart")
+
+    shifted = u @ _diag_unitary(best_phase)
+    kappa = _principal_antihermitian_log(shifted)
+    np.fill_diagonal(kappa, 0.0)
+    if pairs is not None:
+        allowed = np.zeros(kappa.shape, dtype=bool)
+        for p, q in pairs:
+            allowed[p, q] = True
+            allowed[q, p] = True
+        projected = np.linalg.norm(kappa[~allowed]) > 1e-7
+        kappa[~allowed] = 0.0
+    else:
+        projected = False
+    if not projected and np.linalg.norm(scipy.linalg.expm(kappa) - shifted) > 1e-7:
+        raise ValueError("phase-fixed left unitary is outside the principal zero-diagonal chart")
+    return _parameters_from_zero_diag_antihermitian(kappa, pairs=pairs), -best_phase
+
+
+def _left_unitary_from_parameters(
+    params: np.ndarray,
+    norb: int,
+    pairs: list[tuple[int, int]] | None = None,
+) -> np.ndarray:
+    kappa = _zero_diag_antihermitian_from_parameters(params, norb, pairs=pairs)
+    return np.asarray(scipy.linalg.expm(kappa), dtype=np.complex128)
+
+
+def _left_parameters_from_unitary(u: np.ndarray) -> np.ndarray:
+    params, _ = _left_parameters_and_right_phase_from_unitary(u)
+    return params
 
 
 @dataclass(frozen=True)
 class IGCR2LeftUnitaryChart:
     def n_params(self, norb: int) -> int:
-        return norb * norb
+        return norb * (norb - 1)
 
     def unitary_from_parameters(self, params: np.ndarray, norb: int) -> np.ndarray:
         return _left_unitary_from_parameters(params, norb)
 
     def parameters_from_unitary(self, u: np.ndarray) -> np.ndarray:
         return _left_parameters_from_unitary(u)
+
+    def parameters_and_right_phase_from_unitary(self, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        return _left_parameters_and_right_phase_from_unitary(u)
 
 
 @dataclass(frozen=True)
@@ -162,6 +307,65 @@ def exact_reference_ov_params_from_unitary(u, nocc):
 def exact_reference_ov_unitary(u, nocc):
     params = exact_reference_ov_params_from_unitary(u, nocc)
     return ov_final_unitary(params, u.shape[0], nocc)
+
+
+def _left_right_ov_parameter_indices(norb: int, nocc: int, right_start: int):
+    nvirt = norb - nocc
+    if nocc == 0 or nvirt == 0:
+        return []
+    pair_to_idx = {
+        pair: k
+        for k, pair in enumerate(itertools.combinations(range(norb), 2))
+    }
+    n_right_complex = nocc * nvirt
+    out = []
+    for a in range(nvirt):
+        q = nocc + a
+        for i in range(nocc):
+            k = pair_to_idx[(i, q)]
+            out.append((2 * k, right_start + a * nocc + i))
+            out.append((2 * k + 1, right_start + n_right_complex + a * nocc + i))
+    return out
+
+
+def _left_right_ov_adapted_to_native(
+    params: np.ndarray,
+    norb: int,
+    nocc: int,
+    right_start: int,
+    relative_scale: float | None,
+) -> np.ndarray:
+    out = np.array(params, copy=True, dtype=np.float64)
+    if relative_scale is None:
+        return out
+    scale = float(relative_scale)
+    inv_sqrt2 = 1.0 / np.sqrt(2.0)
+    for left_idx, right_idx in _left_right_ov_parameter_indices(norb, nocc, right_start):
+        co_rotating = out[left_idx]
+        relative = out[right_idx]
+        out[left_idx] = inv_sqrt2 * (co_rotating + scale * relative)
+        out[right_idx] = inv_sqrt2 * (co_rotating - scale * relative)
+    return out
+
+
+def _native_to_left_right_ov_adapted(
+    params: np.ndarray,
+    norb: int,
+    nocc: int,
+    right_start: int,
+    relative_scale: float | None,
+) -> np.ndarray:
+    out = np.array(params, copy=True, dtype=np.float64)
+    if relative_scale is None:
+        return out
+    scale = float(relative_scale)
+    inv_sqrt2 = 1.0 / np.sqrt(2.0)
+    for left_idx, right_idx in _left_right_ov_parameter_indices(norb, nocc, right_start):
+        left = out[left_idx]
+        right = out[right_idx]
+        out[left_idx] = inv_sqrt2 * (left + right)
+        out[right_idx] = inv_sqrt2 * (left - right) / scale
+    return out
 
 
 def _n_total_from_nocc(nocc: int) -> int:
@@ -462,17 +666,57 @@ class IGCR2Ansatz:
         return cls.from_ucj(ucj, nocc=t2.shape[0])
 
 
+def relabel_igcr2_ansatz_orbitals(
+    ansatz: IGCR2Ansatz,
+    old_for_new: np.ndarray,
+    phases: np.ndarray | None = None,
+) -> IGCR2Ansatz:
+    if ansatz.norb != len(old_for_new):
+        raise ValueError("orbital permutation length must match ansatz.norb")
+    relabel = _orbital_relabeling_unitary(old_for_new, phases)
+    old_for_new = np.asarray(old_for_new, dtype=np.int64)
+    if ansatz.is_spin_restricted:
+        d = ansatz.diagonal.to_standard()
+        diag = SpinRestrictedSpec(
+            double_params=d.double_params[old_for_new],
+            pair_params=d.pair_params[np.ix_(old_for_new, old_for_new)],
+        )
+        diagonal = reduce_spin_restricted(diag)
+    else:
+        d = ansatz.diagonal.to_standard()
+        diag = SpinBalancedSpec(
+            same_spin_params=d.same_spin_params[np.ix_(old_for_new, old_for_new)],
+            mixed_spin_params=d.mixed_spin_params[np.ix_(old_for_new, old_for_new)],
+        )
+        diagonal = reduce_spin_balanced(diag)
+    return IGCR2Ansatz(
+        diagonal=diagonal,
+        left=relabel.conj().T @ ansatz.left @ relabel,
+        right=relabel.conj().T @ ansatz.right @ relabel,
+        nocc=ansatz.nocc,
+    )
+
+
 @dataclass(frozen=True)
 class IGCR2SpinRestrictedParameterization:
     norb: int
     nocc: int
     interaction_pairs: list[tuple[int, int]] | None = None
     left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
+    left_right_ov_relative_scale: float | None = 3.0
 
     def __post_init__(self):
         if not (0 <= self.nocc <= self.norb):
             raise ValueError("nocc must satisfy 0 <= nocc <= norb")
         _validate_pairs(self.interaction_pairs, self.norb, allow_diagonal=False)
+        if (
+            self.left_right_ov_relative_scale is not None
+            and (
+                not np.isfinite(float(self.left_right_ov_relative_scale))
+                or self.left_right_ov_relative_scale <= 0
+            )
+        ):
+            raise ValueError("left_right_ov_relative_scale must be positive or None")
 
     @property
     def pair_indices(self):
@@ -483,8 +727,12 @@ class IGCR2SpinRestrictedParameterization:
         return IGCR2ReferenceOVUnitaryChart(self.nocc, self.norb - self.nocc)
 
     @property
+    def _left_orbital_chart(self):
+        return self.left_orbital_chart
+
+    @property
     def n_left_orbital_rotation_params(self):
-        return self.left_orbital_chart.n_params(self.norb)
+        return self._left_orbital_chart.n_params(self.norb)
 
     @property
     def n_double_params(self):
@@ -499,6 +747,34 @@ class IGCR2SpinRestrictedParameterization:
         return self.right_orbital_chart.n_params(self.norb)
 
     @property
+    def _right_orbital_rotation_start(self):
+        return self.n_left_orbital_rotation_params + self.n_pair_params
+
+    @property
+    def _left_right_ov_transform_scale(self):
+        if not isinstance(self.left_orbital_chart, IGCR2LeftUnitaryChart):
+            return None
+        return self.left_right_ov_relative_scale
+
+    def _native_parameters_from_public(self, params: np.ndarray) -> np.ndarray:
+        return _left_right_ov_adapted_to_native(
+            params,
+            self.norb,
+            self.nocc,
+            self._right_orbital_rotation_start,
+            self._left_right_ov_transform_scale,
+        )
+
+    def _public_parameters_from_native(self, params: np.ndarray) -> np.ndarray:
+        return _native_to_left_right_ov_adapted(
+            params,
+            self.norb,
+            self.nocc,
+            self._right_orbital_rotation_start,
+            self._left_right_ov_transform_scale,
+        )
+
+    @property
     def n_params(self):
         return (
             self.n_left_orbital_rotation_params
@@ -511,15 +787,16 @@ class IGCR2SpinRestrictedParameterization:
         params = np.asarray(params, dtype=np.float64)
         if params.shape != (self.n_params,):
             raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
+        params = self._native_parameters_from_public(params)
         idx = 0
         n = self.n_left_orbital_rotation_params
-        left = self.left_orbital_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
+        left = self._left_orbital_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
         idx += n
         n = self.n_pair_params
         pair = _symmetric_matrix_from_values(params[idx:idx + n], self.norb, self.pair_indices)
         idx += n
         n = self.n_right_orbital_rotation_params
-        right = ov_final_unitary(params[idx:idx + n], self.norb, self.nocc)
+        right = self.right_orbital_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
         return IGCR2Ansatz(
             diagonal=IGCR2SpinRestrictedSpec(
                 b_tail=np.zeros(max(self.norb - 1, 0), dtype=np.float64),
@@ -539,21 +816,56 @@ class IGCR2SpinRestrictedParameterization:
         d_std = d.to_standard()
         phase_vec = _restricted_left_phase_vector(d_std.double_params, self.nocc)
         left_eff = np.asarray(ansatz.left, dtype=np.complex128) @ _diag_unitary(phase_vec)
+        left_chart = self._left_orbital_chart
+        if hasattr(left_chart, "parameters_and_right_phase_from_unitary"):
+            left_params, right_phase = left_chart.parameters_and_right_phase_from_unitary(left_eff)
+        else:
+            left_params = left_chart.parameters_from_unitary(left_eff)
+            right_phase = np.zeros(self.norb, dtype=np.float64)
         pair_eff = _restricted_irreducible_pair_matrix(d_std.double_params, d_std.pair_params)
+        # Removed left column phases commute through the diagonal correlator and
+        # become a row phase on the right Slater chart.
+        right_eff = _diag_unitary(right_phase) @ np.asarray(ansatz.right, dtype=np.complex128)
         out = np.zeros(self.n_params, dtype=np.float64)
         idx = 0
         n = self.n_left_orbital_rotation_params
-        out[idx:idx + n] = self.left_orbital_chart.parameters_from_unitary(left_eff)
+        out[idx:idx + n] = left_params
         idx += n
         n = self.n_pair_params
         out[idx:idx + n] = np.asarray([pair_eff[p, q] for p, q in self.pair_indices], dtype=np.float64)
         idx += n
         n = self.n_right_orbital_rotation_params
-        out[idx:idx + n] = exact_reference_ov_params_from_unitary(ansatz.right, self.nocc)
-        return out
+        out[idx:idx + n] = self.right_orbital_chart.parameters_from_unitary(right_eff)
+        return self._public_parameters_from_native(out)
 
     def parameters_from_ucj_ansatz(self, ansatz: UCJAnsatz):
         return self.parameters_from_ansatz(IGCR2Ansatz.from_ucj_ansatz(ansatz, self.nocc))
+
+    def transfer_parameters_from(
+        self,
+        previous_parameters: np.ndarray,
+        previous_parameterization: "IGCR2SpinRestrictedParameterization | None" = None,
+        old_for_new: np.ndarray | None = None,
+        phases: np.ndarray | None = None,
+        orbital_overlap: np.ndarray | None = None,
+        block_diagonal: bool = True,
+    ) -> np.ndarray:
+        if previous_parameterization is None:
+            previous_parameterization = self
+        ansatz = previous_parameterization.ansatz_from_parameters(previous_parameters)
+        if ansatz.nocc != self.nocc:
+            raise ValueError("previous ansatz nocc does not match this parameterization")
+        if orbital_overlap is not None:
+            if old_for_new is not None or phases is not None:
+                raise ValueError("Pass either orbital_overlap or explicit relabeling, not both.")
+            old_for_new, phases = orbital_relabeling_from_overlap(
+                orbital_overlap,
+                nocc=self.nocc,
+                block_diagonal=block_diagonal,
+            )
+        if old_for_new is not None:
+            ansatz = relabel_igcr2_ansatz_orbitals(ansatz, old_for_new, phases)
+        return self.parameters_from_ansatz(ansatz)
 
     def params_to_vec(self, reference_vec: np.ndarray, nelec: tuple[int, int]) -> Callable[[np.ndarray], np.ndarray]:
         reference_vec = np.asarray(reference_vec, dtype=np.complex128)
@@ -571,12 +883,21 @@ class IGCR2SpinBalancedParameterization:
     same_spin_interaction_pairs: list[tuple[int, int]] | None = None
     mixed_spin_interaction_pairs: list[tuple[int, int]] | None = None
     left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
+    left_right_ov_relative_scale: float | None = 3.0
 
     def __post_init__(self):
         if not (0 <= self.nocc <= self.norb):
             raise ValueError("nocc must satisfy 0 <= nocc <= norb")
         _validate_pairs(self.same_spin_interaction_pairs, self.norb, allow_diagonal=False)
         _validate_pairs(self.mixed_spin_interaction_pairs, self.norb, allow_diagonal=False)
+        if (
+            self.left_right_ov_relative_scale is not None
+            and (
+                not np.isfinite(float(self.left_right_ov_relative_scale))
+                or self.left_right_ov_relative_scale <= 0
+            )
+        ):
+            raise ValueError("left_right_ov_relative_scale must be positive or None")
 
     @property
     def same_spin_indices(self):
@@ -591,6 +912,10 @@ class IGCR2SpinBalancedParameterization:
         return IGCR2ReferenceOVUnitaryChart(self.nocc, self.norb - self.nocc)
 
     @property
+    def _left_orbital_chart(self):
+        return self.left_orbital_chart
+
+    @property
     def _same_spin_gauge_map(self):
         return _SameSpinPairGaugeMap(
             norb=self.norb,
@@ -603,7 +928,7 @@ class IGCR2SpinBalancedParameterization:
 
     @property
     def n_left_orbital_rotation_params(self):
-        return self.left_orbital_chart.n_params(self.norb)
+        return self._left_orbital_chart.n_params(self.norb)
 
     @property
     def n_same_diag_params(self):
@@ -634,6 +959,47 @@ class IGCR2SpinBalancedParameterization:
         return self.right_orbital_chart.n_params(self.norb)
 
     @property
+    def _right_orbital_rotation_start(self):
+        if self._same_mixed_identical:
+            return (
+                self.n_left_orbital_rotation_params
+                + self._n_same_spin_reduced_params
+                + self._n_same_spin_reduced_params
+                + self._n_same_spin_gauge_params
+            )
+        return (
+            self.n_left_orbital_rotation_params
+            + self.n_same_diag_params
+            + self.n_double_params
+            + self._n_same_spin_reduced_params
+            + self.n_mixed_spin_params
+        )
+
+    @property
+    def _left_right_ov_transform_scale(self):
+        if not isinstance(self.left_orbital_chart, IGCR2LeftUnitaryChart):
+            return None
+        return self.left_right_ov_relative_scale
+
+    def _native_parameters_from_public(self, params: np.ndarray) -> np.ndarray:
+        return _left_right_ov_adapted_to_native(
+            params,
+            self.norb,
+            self.nocc,
+            self._right_orbital_rotation_start,
+            self._left_right_ov_transform_scale,
+        )
+
+    def _public_parameters_from_native(self, params: np.ndarray) -> np.ndarray:
+        return _native_to_left_right_ov_adapted(
+            params,
+            self.norb,
+            self.nocc,
+            self._right_orbital_rotation_start,
+            self._left_right_ov_transform_scale,
+        )
+
+    @property
     def n_params(self):
         if self._same_mixed_identical:
             return (
@@ -656,9 +1022,10 @@ class IGCR2SpinBalancedParameterization:
         params = np.asarray(params, dtype=np.float64)
         if params.shape != (self.n_params,):
             raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
+        params = self._native_parameters_from_public(params)
         idx = 0
         n = self.n_left_orbital_rotation_params
-        left = self.left_orbital_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
+        left = self._left_orbital_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
         idx += n
         if self._same_mixed_identical:
             inv_sqrt2 = 1.0 / np.sqrt(2.0)
@@ -689,7 +1056,7 @@ class IGCR2SpinBalancedParameterization:
             idx += n
 
         n = self.n_right_orbital_rotation_params
-        right = ov_final_unitary(params[idx:idx + n], self.norb, self.nocc)
+        right = self.right_orbital_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
         return IGCR2Ansatz(
             diagonal=IGCR2SpinBalancedSpec(
                 same_diag=np.zeros(self.norb, dtype=np.float64),
@@ -714,18 +1081,28 @@ class IGCR2SpinBalancedParameterization:
             d_std.mixed_spin_params,
             self.nocc,
         )
-        left_eff = np.asarray(ansatz.left, dtype=np.complex128) @ _diag_unitary(phase_vec)
         same_eff, mixed_eff = _balanced_irreducible_pair_matrices(
             d_std.same_spin_params,
             d_std.mixed_spin_params,
         )
         same_full = np.asarray([same_eff[p, q] for p, q in self.same_spin_indices], dtype=np.float64)
         lam = self._same_spin_gauge_map.gauge_lambda(same_full)
-        left_eff = left_eff @ _diag_unitary((self.nocc - 1) * lam)
+        left_eff = np.asarray(ansatz.left, dtype=np.complex128) @ _diag_unitary(
+            phase_vec + (self.nocc - 1) * lam
+        )
+        left_chart = self._left_orbital_chart
+        if hasattr(left_chart, "parameters_and_right_phase_from_unitary"):
+            left_params, right_phase = left_chart.parameters_and_right_phase_from_unitary(left_eff)
+        else:
+            left_params = left_chart.parameters_from_unitary(left_eff)
+            right_phase = np.zeros(self.norb, dtype=np.float64)
+        # Removed left column phases commute through the diagonal correlator and
+        # become a row phase on the right Slater chart.
+        right_eff = _diag_unitary(right_phase) @ np.asarray(ansatz.right, dtype=np.complex128)
         out = np.zeros(self.n_params, dtype=np.float64)
         idx = 0
         n = self.n_left_orbital_rotation_params
-        out[idx:idx + n] = self.left_orbital_chart.parameters_from_unitary(left_eff)
+        out[idx:idx + n] = left_params
         idx += n
         if self._same_mixed_identical:
             inv_sqrt2 = 1.0 / np.sqrt(2.0)
@@ -749,11 +1126,37 @@ class IGCR2SpinBalancedParameterization:
             out[idx:idx + n] = np.asarray([mixed_eff[p, q] for p, q in self.mixed_spin_indices], dtype=np.float64)
             idx += n
         n = self.n_right_orbital_rotation_params
-        out[idx:idx + n] = exact_reference_ov_params_from_unitary(ansatz.right, self.nocc)
-        return out
+        out[idx:idx + n] = self.right_orbital_chart.parameters_from_unitary(right_eff)
+        return self._public_parameters_from_native(out)
 
     def parameters_from_ucj_ansatz(self, ansatz: UCJAnsatz):
         return self.parameters_from_ansatz(IGCR2Ansatz.from_ucj_ansatz(ansatz, self.nocc))
+
+    def transfer_parameters_from(
+        self,
+        previous_parameters: np.ndarray,
+        previous_parameterization: "IGCR2SpinBalancedParameterization | None" = None,
+        old_for_new: np.ndarray | None = None,
+        phases: np.ndarray | None = None,
+        orbital_overlap: np.ndarray | None = None,
+        block_diagonal: bool = True,
+    ) -> np.ndarray:
+        if previous_parameterization is None:
+            previous_parameterization = self
+        ansatz = previous_parameterization.ansatz_from_parameters(previous_parameters)
+        if ansatz.nocc != self.nocc:
+            raise ValueError("previous ansatz nocc does not match this parameterization")
+        if orbital_overlap is not None:
+            if old_for_new is not None or phases is not None:
+                raise ValueError("Pass either orbital_overlap or explicit relabeling, not both.")
+            old_for_new, phases = orbital_relabeling_from_overlap(
+                orbital_overlap,
+                nocc=self.nocc,
+                block_diagonal=block_diagonal,
+            )
+        if old_for_new is not None:
+            ansatz = relabel_igcr2_ansatz_orbitals(ansatz, old_for_new, phases)
+        return self.parameters_from_ansatz(ansatz)
 
     def params_to_vec(self, reference_vec: np.ndarray, nelec: tuple[int, int]) -> Callable[[np.ndarray], np.ndarray]:
         reference_vec = np.asarray(reference_vec, dtype=np.complex128)

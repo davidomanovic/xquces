@@ -559,6 +559,47 @@ def test_balanced_parameters_from_ansatz_from_ucj_roundtrip_state():
     _assert_same_state_up_to_phase(psi_ref, psi, atol=1e-10)
 
 
+def test_orbital_relabeling_from_overlap_block_diagonal():
+    old_for_new_ref = np.array([1, 0, 3, 2])
+    phases_ref = np.array([-1.0, 1.0, 1.0j, -1.0j], dtype=np.complex128)
+    overlap = np.zeros((4, 4), dtype=np.complex128)
+    overlap[old_for_new_ref, np.arange(4)] = phases_ref
+
+    old_for_new, phases = igcr2.orbital_relabeling_from_overlap(
+        overlap,
+        nocc=2,
+        block_diagonal=True,
+    )
+
+    assert np.array_equal(old_for_new, old_for_new_ref)
+    assert np.allclose(phases, phases_ref)
+
+
+def test_balanced_transfer_parameters_with_orbital_relabeling_matches_relabelled_ansatz():
+    rng = np.random.default_rng(2251)
+    norb = 4
+    nocc = 2
+    nelec = (nocc, nocc)
+    phi0 = hartree_fock_state(norb, nelec)
+    param = igcr2.IGCR2SpinBalancedParameterization(norb=norb, nocc=nocc)
+    x = 0.05 * rng.normal(size=param.n_params)
+    old_for_new = np.array([1, 0, 3, 2])
+    phases = np.array([-1.0, 1.0, 1.0j, -1.0j], dtype=np.complex128)
+
+    ansatz = param.ansatz_from_parameters(x)
+    expected = igcr2.relabel_igcr2_ansatz_orbitals(ansatz, old_for_new, phases)
+    x_transfer = param.transfer_parameters_from(
+        x,
+        old_for_new=old_for_new,
+        phases=phases,
+    )
+    transferred = param.ansatz_from_parameters(x_transfer)
+
+    psi_ref = expected.apply(phi0, nelec=nelec, copy=True)
+    psi = transferred.apply(phi0, nelec=nelec, copy=True)
+    _assert_same_state_up_to_phase(psi_ref, psi, atol=1e-10)
+
+
 @pytest.mark.parametrize("seed", [2301, 2302, 2303])
 def test_from_gcr_ansatz_restricted_state_equivalence(seed):
     rng = np.random.default_rng(seed)
