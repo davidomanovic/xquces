@@ -14,8 +14,9 @@ from xquces.gates import apply_ucj_spin_balanced, apply_ucj_spin_restricted
 from xquces.igcr2 import IGCR2SpinBalancedParameterization
 from xquces.orbitals import apply_orbital_rotation, unitary_from_generator
 from xquces.qiskit.gates.diag_2 import Diag2SpinBalancedJW, Diag2SpinRestrictedJW
-from xquces.qiskit.gates.igcr2 import IGCR2JW
+from xquces.qiskit.gates.igcr2 import IGCR2JW, igcr2_stateprep_jw_circuit
 from xquces.qiskit.gates.orbital_rotations import OrbitalRotationJW
+from xquces.states import hartree_fock_state
 
 
 def _random_state(dim: int, seed: int) -> np.ndarray:
@@ -127,3 +128,22 @@ def test_qiskit_igcr2_matches_xquces_ansatz_apply():
     ref = ansatz.apply(vec, nelec=nelec, copy=True)
 
     assert np.allclose(out, ref, atol=1e-10)
+
+
+def test_qiskit_igcr2_stateprep_matches_xquces_ansatz_apply_reference():
+    rng = np.random.default_rng(1401)
+    norb = 4
+    nocc = 2
+    nelec = (nocc, nocc)
+    param = IGCR2SpinBalancedParameterization(norb=norb, nocc=nocc)
+    x = 0.05 * rng.normal(size=param.n_params)
+    ansatz = param.ansatz_from_parameters(x)
+
+    circuit = igcr2_stateprep_jw_circuit(ansatz)
+    full = Statevector.from_label("0" * (2 * norb)).evolve(circuit).data
+    out = _jw_state_to_sector(full, norb, nelec)
+    ref = ansatz.apply(hartree_fock_state(norb, nelec), nelec=nelec, copy=True)
+
+    overlap = np.vdot(ref, out)
+    assert abs(overlap) > 1e-10
+    assert np.allclose(out * overlap.conj() / abs(overlap), ref, atol=1e-10)

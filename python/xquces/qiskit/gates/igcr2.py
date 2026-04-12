@@ -4,6 +4,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 import numpy as np
+from ffsim.qiskit.gates import PrepareSlaterDeterminantJW
 from qiskit.circuit import CircuitInstruction, Gate, QuantumCircuit, QuantumRegister, Qubit
 
 from xquces.igcr2 import IGCR2Ansatz, IGCR2SpinBalancedSpec, IGCR2SpinRestrictedSpec
@@ -296,6 +297,33 @@ def igcr2_jw_circuit(
     return circuit
 
 
+def igcr2_stateprep_jw_circuit(
+    ansatz: IGCR2Ansatz,
+    *,
+    validate_orbital_rotations: bool = True,
+    sparsify_diagonal: bool = True,
+    sparsify_atol: float = 1e-12,
+) -> QuantumCircuit:
+    """Build an iGCR-2 state-preparation circuit under Jordan-Wigner.
+
+    Unlike :class:`IGCR2JW`, this assumes the input is ``|0...0>`` and prepares
+    ``U_L exp(iJ) U_R |Phi_0>`` directly.  Therefore the right factor is lowered
+    with :class:`ffsim.qiskit.gates.PrepareSlaterDeterminantJW`, which only
+    depends on the occupied columns of ``U_R`` instead of implementing ``U_R`` as
+    a generic orbital rotation on an arbitrary input state.
+    """
+    circuit = QuantumCircuit(2 * ansatz.norb)
+    for instruction in _igcr2_stateprep_jw(
+        circuit.qubits,
+        ansatz,
+        validate_orbital_rotations=validate_orbital_rotations,
+        sparsify_diagonal=sparsify_diagonal,
+        sparsify_atol=sparsify_atol,
+    ):
+        circuit.append(instruction)
+    return circuit
+
+
 def _igcr2_jw(
     qubits: Sequence[Qubit],
     ansatz: IGCR2Ansatz,
@@ -307,19 +335,11 @@ def _igcr2_jw(
     if len(qubits) != 2 * ansatz.norb:
         raise ValueError("Expected 2 * ansatz.norb qubits.")
 
-    right = ansatz.right
-    left = ansatz.left
-    diagonal = ansatz.diagonal.to_standard()
-    emit_one_body_phases = True
-    if isinstance(ansatz.diagonal, IGCR2SpinBalancedSpec) and sparsify_diagonal:
-        gauge = spin_balanced_rzz_circuit_gauge(ansatz, atol=sparsify_atol)
-        right = gauge.right
-        left = gauge.left
-        diagonal = type(diagonal)(
-            same_spin_params=gauge.same_spin_params,
-            mixed_spin_params=gauge.mixed_spin_params,
-        )
-        emit_one_body_phases = False
+    right, left, diagonal, emit_one_body_phases = _igcr2_circuit_factors(
+        ansatz,
+        sparsify_diagonal=sparsify_diagonal,
+        sparsify_atol=sparsify_atol,
+    )
 
     yield CircuitInstruction(
         OrbitalRotationJW(
@@ -360,3 +380,85 @@ def _igcr2_jw(
         ),
         qubits,
     )
+
+
+def _igcr2_stateprep_jw(
+    qubits: Sequence[Qubit],
+    ansatz: IGCR2Ansatz,
+    *,
+    validate_orbital_rotations: bool,
+    sparsify_diagonal: bool,
+    sparsify_atol: float,
+) -> Iterator[CircuitInstruction]:
+    if len(qubits) != 2 * ansatz.norb:
+        raise ValueError("Expected 2 * ansatz.norb qubits.")
+
+    right, left, diagonal, emit_one_body_phases = _igcr2_circuit_factors(
+        ansatz,
+        sparsify_diagonal=sparsify_diagonal,
+        sparsify_atol=sparsify_atol,
+    )
+
+    occupied = (range(ansatz.nocc), range(ansatz.nocc))
+    yield CircuitInstruction(
+        PrepareSlaterDeterminantJW(
+            ansatz.norb,
+            occupied,
+            orbital_rotation=right,
+            validate=validate_orbital_rotations,
+        ),
+        qubits,
+    )
+
+    if isinstance(ansatz.diagonal, IGCR2SpinRestrictedSpec):
+        yield CircuitInstruction(
+            Diag2SpinRestrictedJW(
+                ansatz.norb,
+                diagonal.double_params,
+                diagonal.pair_params,
+            ),
+            qubits,
+        )
+    elif isinstance(ansatz.diagonal, IGCR2SpinBalancedSpec):
+        yield CircuitInstruction(
+            Diag2SpinBalancedJW(
+                ansatz.norb,
+                diagonal.same_spin_params,
+                diagonal.mixed_spin_params,
+                emit_one_body_phases=emit_one_body_phases,
+            ),
+            qubits,
+        )
+    else:
+        raise TypeError("Unsupported iGCR-2 diagonal specification.")
+
+    yield CircuitInstruction(
+        OrbitalRotationJW(
+            ansatz.norb,
+            left,
+            validate=validate_orbital_rotations,
+        ),
+        qubits,
+    )
+
+
+def _igcr2_circuit_factors(
+    ansatz: IGCR2Ansatz,
+    *,
+    sparsify_diagonal: bool,
+    sparsify_atol: float,
+):
+    right = ansatz.right
+    left = ansatz.left
+    diagonal = ansatz.diagonal.to_standard()
+    emit_one_body_phases = True
+    if isinstance(ansatz.diagonal, IGCR2SpinBalancedSpec) and sparsify_diagonal:
+        gauge = spin_balanced_rzz_circuit_gauge(ansatz, atol=sparsify_atol)
+        right = gauge.right
+        left = gauge.left
+        diagonal = type(diagonal)(
+            same_spin_params=gauge.same_spin_params,
+            mixed_spin_params=gauge.mixed_spin_params,
+        )
+        emit_one_body_phases = False
+    return right, left, diagonal, emit_one_body_phases
