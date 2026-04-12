@@ -12,9 +12,15 @@ from qiskit.quantum_info import Statevector
 from xquces.basis import occ_rows, reshape_state
 from xquces.gates import apply_ucj_spin_balanced, apply_ucj_spin_restricted
 from xquces.igcr2 import IGCR2SpinBalancedParameterization
+from xquces.igcr3 import (
+    IGCR3SpinRestrictedParameterization,
+    apply_igcr3_spin_restricted_diagonal,
+)
 from xquces.orbitals import apply_orbital_rotation, unitary_from_generator
 from xquces.qiskit.gates.diag_2 import Diag2SpinBalancedJW, Diag2SpinRestrictedJW
+from xquces.qiskit.gates.diag_3 import Diag3SpinRestrictedJW
 from xquces.qiskit.gates.igcr2 import IGCR2JW, igcr2_stateprep_jw_circuit
+from xquces.qiskit.gates.igcr3 import IGCR3JW, igcr3_stateprep_jw_circuit
 from xquces.qiskit.gates.orbital_rotations import OrbitalRotationJW
 from xquces.states import hartree_fock_state
 
@@ -140,6 +146,76 @@ def test_qiskit_igcr2_stateprep_matches_xquces_ansatz_apply_reference():
     ansatz = param.ansatz_from_parameters(x)
 
     circuit = igcr2_stateprep_jw_circuit(ansatz)
+    full = Statevector.from_label("0" * (2 * norb)).evolve(circuit).data
+    out = _jw_state_to_sector(full, norb, nelec)
+    ref = ansatz.apply(hartree_fock_state(norb, nelec), nelec=nelec, copy=True)
+
+    overlap = np.vdot(ref, out)
+    assert abs(overlap) > 1e-10
+    assert np.allclose(out * overlap.conj() / abs(overlap), ref, atol=1e-10)
+
+
+def test_qiskit_diag3_spin_restricted_matches_xquces_apply():
+    rng = np.random.default_rng(1501)
+    norb = 4
+    nelec = (2, 1)
+    dim = len(occ_rows(norb, nelec[0])) * len(occ_rows(norb, nelec[1]))
+    vec = _random_state(dim, 1502)
+    param = IGCR3SpinRestrictedParameterization(norb=norb, nocc=2)
+    x = 0.04 * rng.normal(size=param.n_params)
+    ansatz = param.ansatz_from_parameters(x)
+    d = ansatz.diagonal
+
+    out = _evolve_gate_on_sector(
+        Diag3SpinRestrictedJW(
+            norb,
+            d.full_double(),
+            d.pair_matrix(),
+            d.tau_matrix(),
+            d.omega_vector(),
+        ),
+        vec,
+        norb,
+        nelec,
+    )
+    ref = apply_igcr3_spin_restricted_diagonal(
+        vec,
+        d,
+        norb,
+        nelec=nelec,
+        copy=True,
+    )
+
+    assert np.allclose(out, ref, atol=1e-10)
+
+
+def test_qiskit_igcr3_matches_xquces_ansatz_apply():
+    rng = np.random.default_rng(1601)
+    norb = 4
+    nocc = 2
+    nelec = (nocc, nocc)
+    param = IGCR3SpinRestrictedParameterization(norb=norb, nocc=nocc)
+    x = 0.04 * rng.normal(size=param.n_params)
+    ansatz = param.ansatz_from_parameters(x)
+    dim = len(occ_rows(norb, nelec[0])) * len(occ_rows(norb, nelec[1]))
+    vec = _random_state(dim, 1602)
+
+    out = _evolve_gate_on_sector(IGCR3JW(ansatz), vec, norb, nelec)
+    ref = ansatz.apply(vec, nelec=nelec, copy=True)
+
+    assert np.allclose(out, ref, atol=1e-10)
+
+
+def test_qiskit_igcr3_stateprep_matches_xquces_ansatz_apply_reference():
+    rng = np.random.default_rng(1701)
+    norb = 4
+    nocc = 2
+    nelec = (nocc, nocc)
+    param = IGCR3SpinRestrictedParameterization(norb=norb, nocc=nocc)
+    x = 0.04 * rng.normal(size=param.n_params)
+    ansatz = param.ansatz_from_parameters(x)
+
+    circuit = igcr3_stateprep_jw_circuit(ansatz)
     full = Statevector.from_label("0" * (2 * norb)).evolve(circuit).data
     out = _jw_state_to_sector(full, norb, nelec)
     ref = ansatz.apply(hartree_fock_state(norb, nelec), nelec=nelec, copy=True)

@@ -392,6 +392,42 @@ class IGCR2ReferenceOVUnitaryChart:
         return exact_reference_ov_params_from_unitary(u, self.nocc)
 
 
+@dataclass(frozen=True)
+class IGCR2RealReferenceOVUnitaryChart:
+    nocc: int
+    nvirt: int
+
+    def __post_init__(self):
+        if self.nocc < 0 or self.nvirt < 0:
+            raise ValueError("nocc and nvirt must be nonnegative")
+
+    @property
+    def norb(self) -> int:
+        return self.nocc + self.nvirt
+
+    def n_params(self, norb: int | None = None) -> int:
+        if norb is not None and norb != self.norb:
+            raise ValueError("norb does not match chart dimensions")
+        return self.nocc * self.nvirt
+
+    def unitary_from_parameters(self, params: np.ndarray, norb: int | None = None) -> np.ndarray:
+        if norb is not None and norb != self.norb:
+            raise ValueError("norb does not match chart dimensions")
+        params = np.asarray(params, dtype=np.float64)
+        expected = self.nocc * self.nvirt
+        if params.shape != (expected,):
+            raise ValueError(f"Expected {(expected,)}, got {params.shape}.")
+        full = np.concatenate([params, np.zeros(expected, dtype=np.float64)])
+        return ov_final_unitary(full, self.norb, self.nocc)
+
+    def parameters_from_unitary(self, u: np.ndarray) -> np.ndarray:
+        u = np.asarray(u, dtype=np.complex128)
+        if u.shape != (self.norb, self.norb):
+            raise ValueError("u has wrong shape")
+        n = self.nocc * self.nvirt
+        return exact_reference_ov_params_from_unitary(u, self.nocc)[:n]
+
+
 def exact_reference_ov_params_from_unitary(u, nocc):
     u = np.asarray(u, dtype=np.complex128)
     norb = u.shape[0]
@@ -859,6 +895,8 @@ class IGCR2SpinRestrictedParameterization:
     nocc: int
     interaction_pairs: list[tuple[int, int]] | None = None
     left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
+    right_orbital_chart_override: object | None = None
+    real_right_orbital_chart: bool = False
     left_right_ov_relative_scale: float | None = 3.0
 
     def __post_init__(self):
@@ -880,6 +918,10 @@ class IGCR2SpinRestrictedParameterization:
 
     @property
     def right_orbital_chart(self):
+        if self.right_orbital_chart_override is not None:
+            return self.right_orbital_chart_override
+        if self.real_right_orbital_chart:
+            return IGCR2RealReferenceOVUnitaryChart(self.nocc, self.norb - self.nocc)
         return IGCR2ReferenceOVUnitaryChart(self.nocc, self.norb - self.nocc)
 
     @property

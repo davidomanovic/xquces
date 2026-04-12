@@ -10,6 +10,11 @@ from pyscf.fci import cistring
 
 from xquces._lib import apply_givens_rotation_in_place, apply_phase_shift_in_place
 
+try:
+    from ffsim import apply_orbital_rotation as _ffsim_apply_orbital_rotation
+except Exception:  # pragma: no cover - optional acceleration path
+    _ffsim_apply_orbital_rotation = None
+
 
 def canonicalize_unitary(u: np.ndarray, tol: float = 1e-12) -> np.ndarray:
     u = np.asarray(u, dtype=np.complex128)
@@ -330,6 +335,14 @@ def apply_orbital_rotation(
     nelec: int | tuple[int, int],
     copy: bool = True,
 ) -> np.ndarray:
+    if _ffsim_apply_orbital_rotation is not None:
+        return _ffsim_apply_orbital_rotation(
+            vec,
+            orbital_rotation,
+            norb,
+            nelec,
+            copy=copy,
+        )
     vec = np.asarray(vec, dtype=np.complex128)
     if copy:
         vec = vec.copy()

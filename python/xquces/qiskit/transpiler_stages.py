@@ -7,8 +7,9 @@ from qiskit.transpiler.passes import Decompose
 
 
 def pre_init_passes() -> Iterator[BasePass]:
-    """Yield iGCR-2 passes for Qiskit's ``pre_init`` transpiler stage."""
-    yield Decompose(["igcr2_jw"])
+    """Yield iGCR pre-init decompositions for Qiskit's transpiler."""
+    yield Decompose(["igcr2_jw", "igcr3_jw"])
+    yield Decompose(["igcr3_diag3_restricted_jw"])
     yield Decompose(
         [
             "igcr2_diag2_balanced_jw",

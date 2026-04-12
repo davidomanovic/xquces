@@ -691,6 +691,20 @@ def test_restricted_default_pair_count_matches_complete_graph():
     assert param.n_pair_params == len(_all_upper_pairs(6))
 
 
+def test_restricted_real_right_chart_drops_complex_ov_half():
+    param = igcr2.IGCR2SpinRestrictedParameterization(
+        norb=6,
+        nocc=3,
+        real_right_orbital_chart=True,
+    )
+    assert param.n_right_orbital_rotation_params == 3 * 3
+    assert param.n_params == (
+        param.n_left_orbital_rotation_params
+        + param.n_pair_params
+        + 3 * 3
+    )
+
+
 def test_balanced_default_pair_count_matches_complete_graph():
     param = igcr2.IGCR2SpinBalancedParameterization(norb=6, nocc=3)
     assert param.n_same_spin_params == len(_all_upper_pairs(6))
