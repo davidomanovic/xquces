@@ -9,7 +9,7 @@ from ffsim.qiskit import jordan_wigner
 from qiskit import transpile
 from qiskit_aer import AerSimulator
 
-from xquces.igcr2 import IGCR2SpinBalancedParameterization
+from xquces.gcr.igcr2 import IGCR2SpinBalancedParameterization
 from xquces.qiskit.gates.igcr2 import igcr2_stateprep_jw_circuit
 from xquces.ucj.init import _ucj_ansatz_from_ffsim_stock
 

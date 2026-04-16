@@ -44,7 +44,9 @@ pub fn apply_givens_rotation_in_place(
     let slice2 = slice2.as_array();
 
     if slice1.len() != slice2.len() {
-        return Err(PyValueError::new_err("slice1 and slice2 must have the same length"));
+        return Err(PyValueError::new_err(
+            "slice1 and slice2 must have the same length",
+        ));
     }
 
     let mut vec = vec.as_array_mut();
@@ -55,11 +57,7 @@ pub fn apply_givens_rotation_in_place(
     let ptr_addr = data.as_mut_ptr() as usize;
     let s = Complex64::new(s_re, s_im);
 
-    let pairs: Vec<(usize, usize)> = slice1
-        .iter()
-        .copied()
-        .zip(slice2.iter().copied())
-        .collect();
+    let pairs: Vec<(usize, usize)> = slice1.iter().copied().zip(slice2.iter().copied()).collect();
 
     pairs.par_iter().for_each(|&(i, j)| unsafe {
         let ptr = ptr_addr as *mut Complex64;

@@ -29,6 +29,9 @@ from xquces.ucj.parameterization import (
     UCJSpinBalancedParameterization,
     UCJSpinRestrictedParameterization,
 )
+from xquces.optimize.linear_method import minimize_linear_method
+from xquces.gcr.igcr2 import IGCR2SpinRestrictedParameterization
+from xquces.gcr.igcr3 import IGCR3SpinRestrictedParameterization
 
 __all__ = [
     "hartree_fock_state",
@@ -56,4 +59,7 @@ __all__ = [
     "UCJRestrictedProjectedDFSeed",
     "heuristic_restricted_pair_params_from_t2",
     "project_spin_balanced_to_spin_restricted",
+    "IGCR2SpinRestrictedParameterization",
+    "IGCR3SpinRestrictedParameterization",
+    "minimize_linear_method",
 ]

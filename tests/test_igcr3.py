@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from xquces.basis import flatten_state, occ_rows, reshape_state
-from xquces.igcr2 import IGCR2SpinRestrictedParameterization
+from xquces.gcr.igcr2 import IGCR2SpinRestrictedParameterization
 from xquces.states import hartree_fock_state
 from xquces.ucj.init import UCJRestrictedProjectedDFSeed
 

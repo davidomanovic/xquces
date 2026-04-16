@@ -10,8 +10,8 @@ import pyscf.fci
 from scipy.sparse.linalg import LinearOperator
 from ffsim.optimize import minimize_linear_method
 
-from xquces.igcr2 import IGCR2SpinRestrictedParameterization
-from xquces.igcr3 import IGCR3SpinRestrictedParameterization
+from xquces.gcr.igcr2 import IGCR2SpinRestrictedParameterization
+from xquces.gcr.igcr3 import IGCR3SpinRestrictedParameterization
 from xquces.hamiltonians import MolecularHamiltonianLinearOperator
 from xquces.states import hartree_fock_state
 from xquces.ucj.init import UCJRestrictedProjectedDFSeed

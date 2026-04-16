@@ -20,7 +20,7 @@ from qiskit_addon_sqd.fermion import (
 )
 from qiskit_addon_sqd.counts import bit_array_to_arrays
 
-from xquces.igcr2 import IGCR2SpinBalancedParameterization
+from xquces.gcr.igcr2 import IGCR2SpinBalancedParameterization
 from xquces.qiskit.gates.igcr2 import igcr2_stateprep_jw_circuit
 from xquces.ucj.init import UCJBalancedDFSeed
 

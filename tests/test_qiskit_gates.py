@@ -11,8 +11,8 @@ from qiskit.quantum_info import Statevector
 
 from xquces.basis import occ_rows, reshape_state
 from xquces.gates import apply_ucj_spin_balanced, apply_ucj_spin_restricted
-from xquces.igcr2 import IGCR2SpinBalancedParameterization
-from xquces.igcr3 import (
+from xquces.gcr.igcr2 import IGCR2SpinBalancedParameterization
+from xquces.gcr.igcr3 import (
     IGCR3SpinRestrictedParameterization,
     apply_igcr3_spin_restricted_diagonal,
 )

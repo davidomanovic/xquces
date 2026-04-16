@@ -7,7 +7,7 @@ import numpy as np
 from ffsim.qiskit.gates import PrepareSlaterDeterminantJW
 from qiskit.circuit import CircuitInstruction, Gate, QuantumCircuit, QuantumRegister, Qubit
 
-from xquces.igcr2 import IGCR2Ansatz, IGCR2SpinBalancedSpec, IGCR2SpinRestrictedSpec
+from xquces.gcr.igcr2 import IGCR2Ansatz, IGCR2SpinBalancedSpec, IGCR2SpinRestrictedSpec
 from xquces.qiskit.gates.diag_2 import (
     Diag2SpinBalancedJW,
     Diag2SpinRestrictedJW,
