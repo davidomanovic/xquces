@@ -7,7 +7,7 @@ from typing import Callable
 
 import numpy as np
 
-from xquces.basis import flatten_state, occ_rows, reshape_state
+from xquces.basis import flatten_state, occ_indicator_rows, reshape_state
 from xquces.gcr.model import GCRAnsatz
 from xquces._lib import apply_igcr3_spin_restricted_in_place_num_rep
 from xquces.gcr.igcr2 import (
@@ -193,8 +193,6 @@ class IGCR3CubicReduction:
             residual,
             rcond=None,
         )
-        # old - new is an exact gauge vector, so the pair coefficients move
-        # with the opposite sign of the pair part of that vector.
         pair_reduced = pair_values - self.gauge_pair_matrix @ gauge_coeff
         onebody_phase = np.zeros(self.norb, dtype=np.float64)
         if self.norb:
@@ -418,18 +416,18 @@ def apply_igcr3_spin_restricted_diagonal(
 ) -> np.ndarray:
     arr = np.array(vec, dtype=np.complex128, copy=copy)
     state2 = reshape_state(arr, norb, nelec)
-    occ_alpha = occ_rows(norb, nelec[0])
-    occ_beta = occ_rows(norb, nelec[1])
-    double = diagonal.full_double()
-    pair = diagonal.pair_matrix()
-    tau = diagonal.tau_matrix()
-    omega = diagonal.omega_vector()
+    occ_alpha = occ_indicator_rows(norb, nelec[0])
+    occ_beta = occ_indicator_rows(norb, nelec[1])
+    double = np.asarray(diagonal.full_double(), dtype=np.float64) * time
+    pair = np.asarray(diagonal.pair_matrix(), dtype=np.float64) * time
+    tau = np.asarray(diagonal.tau_matrix(), dtype=np.float64) * time
+    omega = np.asarray(diagonal.omega_vector(), dtype=np.float64) * time
     apply_igcr3_spin_restricted_in_place_num_rep(
         state2,
-        np.exp(1j * time * double),
-        np.exp(1j * time * pair),
-        np.exp(1j * time * tau),
-        np.exp(1j * time * omega),
+        double,
+        pair,
+        tau,
+        omega,
         norb,
         occ_alpha,
         occ_beta,
