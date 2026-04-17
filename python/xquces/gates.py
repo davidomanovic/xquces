@@ -5,7 +5,7 @@ import numpy as np
 from xquces._lib import apply_igcr2_spin_restricted_in_place_num_rep
 from xquces._lib import apply_ucj_spin_balanced_in_place_num_rep
 from xquces._lib import apply_ucj_spin_restricted_in_place_num_rep
-from xquces.basis import flatten_state, occ_rows, reshape_state
+from xquces.basis import flatten_state, occ_indicator_rows, occ_rows, reshape_state
 from xquces.orbitals import apply_orbital_rotation
 
 
@@ -154,16 +154,12 @@ def apply_igcr2_spin_restricted(
     if right_orbital_rotation is not None:
         arr = apply_orbital_rotation(arr, right_orbital_rotation, norb=norb, nelec=nelec, copy=False)
 
-    pair_params = np.asarray(pair_params, dtype=np.float64)
-    pair_upper = np.zeros((norb, norb), dtype=np.complex128)
-    for p in range(norb):
-        for q in range(p + 1, norb):
-            pair_upper[p, q] = np.exp(1j * time * pair_params[p, q])
+    pair_params = np.asarray(pair_params, dtype=np.float64) * time
 
     state2 = reshape_state(arr, norb, nelec)
-    occ_a = occ_rows(norb, nelec[0])
-    occ_b = occ_rows(norb, nelec[1])
-    apply_igcr2_spin_restricted_in_place_num_rep(state2, pair_upper, norb, occ_a, occ_b)
+    occ_a = occ_indicator_rows(norb, nelec[0])
+    occ_b = occ_indicator_rows(norb, nelec[1])
+    apply_igcr2_spin_restricted_in_place_num_rep(state2, pair_params, norb, occ_a, occ_b)
     arr = flatten_state(state2)
 
     if left_orbital_rotation is not None:
