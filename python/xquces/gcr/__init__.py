@@ -1,3 +1,4 @@
+import xquces.gcr.reduction_patches as _reduction_patches
 from xquces.gcr.model import GCRAnsatz, gcr_from_ucj_ansatz
 from xquces.gcr.parameterization import (
     GCRSpinBalancedParameterization,
