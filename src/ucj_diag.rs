@@ -197,7 +197,6 @@ pub fn apply_igcr2_spin_restricted_in_place_num_rep(
     let mut ps_a = vec![0.0f64; dim_a];
     let mut ps_b = vec![0.0f64; dim_b];
     let mut ca = vec![0.0f64; dim_a * norb];
-    let mut cb = vec![0.0f64; dim_b * norb];
 
     ps_a
         .par_iter_mut()
@@ -228,46 +227,30 @@ pub fn apply_igcr2_spin_restricted_in_place_num_rep(
             }
         });
 
-    ps_b
-        .par_iter_mut()
-        .zip(cb.par_chunks_mut(norb))
-        .enumerate()
-        .for_each(|(ib, (ps, cb_row))| {
-            let occ = beta_occ.row(ib);
-            for p in 0..norb {
-                if occ[p] == 0 {
-                    continue;
-                }
-                for q in (p + 1)..norb {
-                    let j = pair[(p, q)];
-                    if j == 0.0 {
-                        continue;
-                    }
-                    if occ[q] != 0 {
-                        *ps += j;
-                    }
-                    cb_row[q] += j;
-                }
-                for q in 0..p {
-                    let j = pair[(q, p)];
-                    if j != 0.0 {
-                        cb_row[q] += j;
-                    }
+    ps_b.par_iter_mut().enumerate().for_each(|(ib, ps)| {
+        let occ = beta_occ.row(ib);
+        for p in 0..norb {
+            if occ[p] == 0 {
+                continue;
+            }
+            for q in (p + 1)..norb {
+                let j = pair[(p, q)];
+                if j != 0.0 && occ[q] != 0 {
+                    *ps += j;
                 }
             }
-        });
+        }
+    });
 
     Zip::indexed(vec.rows_mut())
         .and(alpha_occ.rows())
-        .par_for_each(|ia, mut row, occ_a| {
+        .par_for_each(|ia, mut row, _occ_a| {
             let ca_row = &ca[ia * norb..(ia + 1) * norb];
             let scalar_a = ps_a[ia];
             for ib in 0..dim_b {
                 let occ_b = beta_occ.row(ib);
-                let cb_row = &cb[ib * norb..(ib + 1) * norb];
                 let mut phi = scalar_a + ps_b[ib];
                 phi += dot_occ(ca_row, occ_b);
-                phi += dot_occ(cb_row, occ_a);
                 let (s, c) = phi.sin_cos();
                 row[ib] *= Complex64::new(c, s);
             }
@@ -372,27 +355,14 @@ pub fn apply_igcr3_spin_restricted_in_place_num_rep(
         .enumerate()
         .for_each(|(ib, ((ps, ooo), cb_row))| {
             let occ = beta_occ.row(ib);
-            for k in 0..norb {
-                cb_row[k] += lam[k] * occ[k] as f64;
-            }
             for p in 0..norb {
                 if occ[p] == 0 {
                     continue;
                 }
                 for q in (p + 1)..norb {
                     let j = pair[(p, q)];
-                    if j == 0.0 {
-                        continue;
-                    }
-                    if occ[q] != 0 {
+                    if j != 0.0 && occ[q] != 0 {
                         *ps += j;
-                    }
-                    cb_row[q] += j;
-                }
-                for q in 0..p {
-                    let j = pair[(q, p)];
-                    if j != 0.0 {
-                        cb_row[q] += j;
                     }
                 }
             }
@@ -548,27 +518,14 @@ pub fn apply_igcr4_spin_restricted_in_place_num_rep(
         .enumerate()
         .for_each(|(ib, ((ps, ooo), cb_row))| {
             let occ = beta_occ.row(ib);
-            for k in 0..norb {
-                cb_row[k] += lam[k] * occ[k] as f64;
-            }
             for p in 0..norb {
                 if occ[p] == 0 {
                     continue;
                 }
                 for q in (p + 1)..norb {
                     let j = pair[(p, q)];
-                    if j == 0.0 {
-                        continue;
-                    }
-                    if occ[q] != 0 {
+                    if j != 0.0 && occ[q] != 0 {
                         *ps += j;
-                    }
-                    cb_row[q] += j;
-                }
-                for q in 0..p {
-                    let j = pair[(q, p)];
-                    if j != 0.0 {
-                        cb_row[q] += j;
                     }
                 }
             }
