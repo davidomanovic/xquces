@@ -7,7 +7,7 @@ from typing import Callable
 
 import numpy as np
 
-from xquces.basis import flatten_state, occ_rows, reshape_state
+from xquces.basis import flatten_state, occ_indicator_rows, reshape_state
 from xquces.gcr.model import GCRAnsatz
 from xquces._lib import apply_igcr4_spin_restricted_in_place_num_rep
 from xquces.gcr.igcr2 import (
@@ -399,31 +399,24 @@ class IGCR4SpinRestrictedSpec:
             raise ValueError("n and d must have shape (norb,)")
 
         phase = float(np.dot(self.full_double(), d))
-
         pair = self.pair_matrix()
         for p, q in self.pair_indices:
             phase += pair[p, q] * n[p] * n[q]
-
         tau = self.tau_matrix()
         for p, q in self.tau_indices:
             phase += tau[p, q] * d[p] * n[q]
-
         omega = self.omega_vector()
         for value, (p, q, r) in zip(omega, self.omega_indices):
             phase += value * n[p] * n[q] * n[r]
-
         eta = self.eta_vector()
         for value, (p, q) in zip(eta, self.eta_indices):
             phase += value * d[p] * d[q]
-
         rho = self.rho_vector()
         for value, (p, q, r) in zip(rho, self.rho_indices):
             phase += value * d[p] * n[q] * n[r]
-
         sigma = self.sigma_vector()
         for value, (p, q, r, s) in zip(sigma, self.sigma_indices):
             phase += value * n[p] * n[q] * n[r] * n[s]
-
         return float(phase)
 
     def to_igcr3_diagonal(self) -> IGCR3SpinRestrictedSpec:
@@ -480,17 +473,17 @@ def apply_igcr4_spin_restricted_diagonal(
 ) -> np.ndarray:
     arr = np.array(vec, dtype=np.complex128, copy=copy)
     state2 = reshape_state(arr, norb, nelec)
-    occ_alpha = occ_rows(norb, nelec[0])
-    occ_beta = occ_rows(norb, nelec[1])
+    occ_alpha = occ_indicator_rows(norb, nelec[0])
+    occ_beta = occ_indicator_rows(norb, nelec[1])
     apply_igcr4_spin_restricted_in_place_num_rep(
         state2,
-        np.exp(1j * time * diagonal.full_double()),
-        np.exp(1j * time * diagonal.pair_matrix()),
-        np.exp(1j * time * diagonal.tau_matrix()),
-        np.exp(1j * time * diagonal.omega_vector()),
-        np.exp(1j * time * diagonal.eta_vector()),
-        np.exp(1j * time * diagonal.rho_vector()),
-        np.exp(1j * time * diagonal.sigma_vector()),
+        np.asarray(diagonal.full_double(), dtype=np.float64) * time,
+        np.asarray(diagonal.pair_matrix(), dtype=np.float64) * time,
+        np.asarray(diagonal.tau_matrix(), dtype=np.float64) * time,
+        np.asarray(diagonal.omega_vector(), dtype=np.float64) * time,
+        np.asarray(diagonal.eta_vector(), dtype=np.float64) * time,
+        np.asarray(diagonal.rho_vector(), dtype=np.float64) * time,
+        np.asarray(diagonal.sigma_vector(), dtype=np.float64) * time,
         norb,
         occ_alpha,
         occ_beta,
