@@ -1,15 +1,27 @@
+use ndarray::parallel::prelude::*;
 use ndarray::Array2;
+use ndarray::ArrayView1;
 use ndarray::Zip;
 use num_complex::Complex64;
 use numpy::PyReadonlyArray1;
 use numpy::PyReadonlyArray2;
 use numpy::PyReadwriteArray2;
 use pyo3::prelude::*;
+use rayon::prelude::*;
 
 fn pow_small(base: Complex64, exp: usize) -> Complex64 {
     let mut out = Complex64::new(1.0, 0.0);
     for _ in 0..exp {
         out *= base;
+    }
+    out
+}
+
+#[inline]
+fn dot_occ(coeff: &[f64], occ: ArrayView1<u8>) -> f64 {
+    let mut out = 0.0f64;
+    for k in 0..coeff.len() {
+        out += coeff[k] * occ[k] as f64;
     }
     out
 }
@@ -169,62 +181,95 @@ pub fn apply_ucj_spin_balanced_in_place_num_rep(
 #[pyfunction]
 pub fn apply_igcr2_spin_restricted_in_place_num_rep(
     mut vec: PyReadwriteArray2<Complex64>,
-    pair_exp: PyReadonlyArray2<Complex64>,
+    pair_params: PyReadonlyArray2<f64>,
     norb: usize,
-    occupations_a: PyReadonlyArray2<usize>,
-    occupations_b: PyReadonlyArray2<usize>,
+    alpha_occ: PyReadonlyArray2<u8>,
+    beta_occ: PyReadonlyArray2<u8>,
 ) {
-    let pair_exp = pair_exp.as_array();
+    let pair = pair_params.as_array();
     let mut vec = vec.as_array_mut();
-    let occupations_a = occupations_a.as_array();
-    let occupations_b = occupations_b.as_array();
+    let alpha_occ = alpha_occ.as_array();
+    let beta_occ = beta_occ.as_array();
 
     let dim_a = vec.shape()[0];
     let dim_b = vec.shape()[1];
-    let n_alpha = occupations_a.shape()[1];
-    let n_beta = occupations_b.shape()[1];
 
-    let mut alpha_occ = Array2::<usize>::zeros((dim_a, norb));
-    let mut beta_occ = Array2::<usize>::zeros((dim_b, norb));
+    let mut ps_a = vec![0.0f64; dim_a];
+    let mut ps_b = vec![0.0f64; dim_b];
+    let mut ca = vec![0.0f64; dim_a * norb];
+    let mut cb = vec![0.0f64; dim_b * norb];
 
-    Zip::from(alpha_occ.rows_mut())
-        .and(occupations_a.rows())
-        .par_for_each(|mut row, orbs| {
-            for j in 0..n_alpha {
-                row[orbs[j]] = 1;
+    ps_a
+        .par_iter_mut()
+        .zip(ca.par_chunks_mut(norb))
+        .enumerate()
+        .for_each(|(ia, (ps, ca_row))| {
+            let occ = alpha_occ.row(ia);
+            for p in 0..norb {
+                if occ[p] == 0 {
+                    continue;
+                }
+                for q in (p + 1)..norb {
+                    let j = pair[(p, q)];
+                    if j == 0.0 {
+                        continue;
+                    }
+                    if occ[q] != 0 {
+                        *ps += j;
+                    }
+                    ca_row[q] += j;
+                }
+                for q in 0..p {
+                    let j = pair[(q, p)];
+                    if j != 0.0 {
+                        ca_row[q] += j;
+                    }
+                }
             }
         });
 
-    Zip::from(beta_occ.rows_mut())
-        .and(occupations_b.rows())
-        .par_for_each(|mut row, orbs| {
-            for j in 0..n_beta {
-                row[orbs[j]] = 1;
+    ps_b
+        .par_iter_mut()
+        .zip(cb.par_chunks_mut(norb))
+        .enumerate()
+        .for_each(|(ib, (ps, cb_row))| {
+            let occ = beta_occ.row(ib);
+            for p in 0..norb {
+                if occ[p] == 0 {
+                    continue;
+                }
+                for q in (p + 1)..norb {
+                    let j = pair[(p, q)];
+                    if j == 0.0 {
+                        continue;
+                    }
+                    if occ[q] != 0 {
+                        *ps += j;
+                    }
+                    cb_row[q] += j;
+                }
+                for q in 0..p {
+                    let j = pair[(q, p)];
+                    if j != 0.0 {
+                        cb_row[q] += j;
+                    }
+                }
             }
         });
 
     Zip::indexed(vec.rows_mut())
         .and(alpha_occ.rows())
-        .par_for_each(|_, mut row, occ_a| {
+        .par_for_each(|ia, mut row, occ_a| {
+            let ca_row = &ca[ia * norb..(ia + 1) * norb];
+            let scalar_a = ps_a[ia];
             for ib in 0..dim_b {
                 let occ_b = beta_occ.row(ib);
-                let mut phase = Complex64::new(1.0, 0.0);
-
-                for p in 0..norb {
-                    let count_p = occ_a[p] + occ_b[p];
-                    if count_p == 0 {
-                        continue;
-                    }
-                    for q in (p + 1)..norb {
-                        let count_q = occ_a[q] + occ_b[q];
-                        if count_q == 0 {
-                            continue;
-                        }
-                        phase *= pow_small(pair_exp[(p, q)], count_p * count_q);
-                    }
-                }
-
-                row[ib] *= phase;
+                let cb_row = &cb[ib * norb..(ib + 1) * norb];
+                let mut phi = scalar_a + ps_b[ib];
+                phi += dot_occ(ca_row, occ_b);
+                phi += dot_occ(cb_row, occ_a);
+                let (s, c) = phi.sin_cos();
+                row[ib] *= Complex64::new(c, s);
             }
         });
 }
@@ -232,104 +277,169 @@ pub fn apply_igcr2_spin_restricted_in_place_num_rep(
 #[pyfunction]
 pub fn apply_igcr3_spin_restricted_in_place_num_rep(
     mut vec: PyReadwriteArray2<Complex64>,
-    double_exp: PyReadonlyArray1<Complex64>,
-    pair_exp: PyReadonlyArray2<Complex64>,
-    tau_exp: PyReadonlyArray2<Complex64>,
-    omega_exp: PyReadonlyArray1<Complex64>,
+    double_params: PyReadonlyArray1<f64>,
+    pair_params: PyReadonlyArray2<f64>,
+    tau_params: PyReadonlyArray2<f64>,
+    omega_params: PyReadonlyArray1<f64>,
     norb: usize,
-    occupations_a: PyReadonlyArray2<usize>,
-    occupations_b: PyReadonlyArray2<usize>,
+    alpha_occ: PyReadonlyArray2<u8>,
+    beta_occ: PyReadonlyArray2<u8>,
 ) {
-    let double_exp = double_exp.as_array();
-    let pair_exp = pair_exp.as_array();
-    let tau_exp = tau_exp.as_array();
-    let omega_exp = omega_exp.as_array();
+    let lam = double_params.as_array();
+    let pair = pair_params.as_array();
+    let tau = tau_params.as_array();
+    let omega = omega_params.as_array();
     let mut vec = vec.as_array_mut();
-    let occupations_a = occupations_a.as_array();
-    let occupations_b = occupations_b.as_array();
+    let alpha_occ = alpha_occ.as_array();
+    let beta_occ = beta_occ.as_array();
 
     let dim_a = vec.shape()[0];
     let dim_b = vec.shape()[1];
-    let n_alpha = occupations_a.shape()[1];
-    let n_beta = occupations_b.shape()[1];
 
-    let mut alpha_occ = Array2::<usize>::zeros((dim_a, norb));
-    let mut beta_occ = Array2::<usize>::zeros((dim_b, norb));
+    let mut ps_a = vec![0.0f64; dim_a];
+    let mut ps_b = vec![0.0f64; dim_b];
+    let mut ooo_a = vec![0.0f64; dim_a];
+    let mut ooo_b = vec![0.0f64; dim_b];
+    let mut ca = vec![0.0f64; dim_a * norb];
+    let mut cb = vec![0.0f64; dim_b * norb];
 
-    Zip::from(alpha_occ.rows_mut())
-        .and(occupations_a.rows())
-        .par_for_each(|mut row, orbs| {
-            for j in 0..n_alpha {
-                row[orbs[j]] = 1;
+    ps_a
+        .par_iter_mut()
+        .zip(ooo_a.par_iter_mut())
+        .zip(ca.par_chunks_mut(norb))
+        .enumerate()
+        .for_each(|(ia, ((ps, ooo), ca_row))| {
+            let occ = alpha_occ.row(ia);
+            for k in 0..norb {
+                ca_row[k] += lam[k] * occ[k] as f64;
+            }
+            for p in 0..norb {
+                if occ[p] == 0 {
+                    continue;
+                }
+                for q in (p + 1)..norb {
+                    let j = pair[(p, q)];
+                    if j == 0.0 {
+                        continue;
+                    }
+                    if occ[q] != 0 {
+                        *ps += j;
+                    }
+                    ca_row[q] += j;
+                }
+                for q in 0..p {
+                    let j = pair[(q, p)];
+                    if j != 0.0 {
+                        ca_row[q] += j;
+                    }
+                }
+            }
+            for p in 0..norb {
+                if occ[p] == 0 {
+                    continue;
+                }
+                let mut dot = 0.0f64;
+                for q in 0..norb {
+                    dot += tau[(p, q)] * occ[q] as f64;
+                }
+                ca_row[p] += dot;
+            }
+            let mut omega_idx = 0usize;
+            for p in 0..norb {
+                for q in (p + 1)..norb {
+                    for r in (q + 1)..norb {
+                        let w = omega[omega_idx];
+                        omega_idx += 1;
+                        if w == 0.0 {
+                            continue;
+                        }
+                        let ap = occ[p] as f64;
+                        let aq = occ[q] as f64;
+                        let ar = occ[r] as f64;
+                        *ooo += w * ap * aq * ar;
+                        ca_row[r] += w * ap * aq;
+                        ca_row[q] += w * ap * ar;
+                        ca_row[p] += w * aq * ar;
+                    }
+                }
             }
         });
 
-    Zip::from(beta_occ.rows_mut())
-        .and(occupations_b.rows())
-        .par_for_each(|mut row, orbs| {
-            for j in 0..n_beta {
-                row[orbs[j]] = 1;
+    ps_b
+        .par_iter_mut()
+        .zip(ooo_b.par_iter_mut())
+        .zip(cb.par_chunks_mut(norb))
+        .enumerate()
+        .for_each(|(ib, ((ps, ooo), cb_row))| {
+            let occ = beta_occ.row(ib);
+            for k in 0..norb {
+                cb_row[k] += lam[k] * occ[k] as f64;
+            }
+            for p in 0..norb {
+                if occ[p] == 0 {
+                    continue;
+                }
+                for q in (p + 1)..norb {
+                    let j = pair[(p, q)];
+                    if j == 0.0 {
+                        continue;
+                    }
+                    if occ[q] != 0 {
+                        *ps += j;
+                    }
+                    cb_row[q] += j;
+                }
+                for q in 0..p {
+                    let j = pair[(q, p)];
+                    if j != 0.0 {
+                        cb_row[q] += j;
+                    }
+                }
+            }
+            for p in 0..norb {
+                if occ[p] == 0 {
+                    continue;
+                }
+                let mut dot = 0.0f64;
+                for q in 0..norb {
+                    dot += tau[(p, q)] * occ[q] as f64;
+                }
+                cb_row[p] += dot;
+            }
+            let mut omega_idx = 0usize;
+            for p in 0..norb {
+                for q in (p + 1)..norb {
+                    for r in (q + 1)..norb {
+                        let w = omega[omega_idx];
+                        omega_idx += 1;
+                        if w == 0.0 {
+                            continue;
+                        }
+                        let ap = occ[p] as f64;
+                        let aq = occ[q] as f64;
+                        let ar = occ[r] as f64;
+                        *ooo += w * ap * aq * ar;
+                        cb_row[r] += w * ap * aq;
+                        cb_row[q] += w * ap * ar;
+                        cb_row[p] += w * aq * ar;
+                    }
+                }
             }
         });
 
     Zip::indexed(vec.rows_mut())
         .and(alpha_occ.rows())
-        .par_for_each(|_, mut row, occ_a| {
+        .par_for_each(|ia, mut row, occ_a| {
+            let ca_row = &ca[ia * norb..(ia + 1) * norb];
+            let scalar_a = ps_a[ia] + ooo_a[ia];
             for ib in 0..dim_b {
                 let occ_b = beta_occ.row(ib);
-                let mut phase = Complex64::new(1.0, 0.0);
-
-                for p in 0..norb {
-                    let count_p = occ_a[p] + occ_b[p];
-                    if count_p == 0 {
-                        continue;
-                    }
-                    if count_p == 2 {
-                        phase *= double_exp[p];
-                    }
-
-                    for q in (p + 1)..norb {
-                        let count_q = occ_a[q] + occ_b[q];
-                        if count_q == 0 {
-                            continue;
-                        }
-                        phase *= pow_small(pair_exp[(p, q)], count_p * count_q);
-                    }
-                }
-
-                for p in 0..norb {
-                    let count_p = occ_a[p] + occ_b[p];
-                    if count_p != 2 {
-                        continue;
-                    }
-                    for q in 0..norb {
-                        if p == q {
-                            continue;
-                        }
-                        let count_q = occ_a[q] + occ_b[q];
-                        if count_q != 0 {
-                            phase *= pow_small(tau_exp[(p, q)], count_q);
-                        }
-                    }
-                }
-
-                let mut omega_idx = 0;
-                for p in 0..norb {
-                    let count_p = occ_a[p] + occ_b[p];
-                    for q in (p + 1)..norb {
-                        let count_q = occ_a[q] + occ_b[q];
-                        for r in (q + 1)..norb {
-                            let count_r = occ_a[r] + occ_b[r];
-                            let exponent = count_p * count_q * count_r;
-                            if exponent != 0 {
-                                phase *= pow_small(omega_exp[omega_idx], exponent);
-                            }
-                            omega_idx += 1;
-                        }
-                    }
-                }
-
-                row[ib] *= phase;
+                let cb_row = &cb[ib * norb..(ib + 1) * norb];
+                let mut phi = scalar_a + ps_b[ib] + ooo_b[ib];
+                phi += dot_occ(ca_row, occ_b);
+                phi += dot_occ(cb_row, occ_a);
+                let (s, c) = phi.sin_cos();
+                row[ib] *= Complex64::new(c, s);
             }
         });
 }
@@ -337,161 +447,218 @@ pub fn apply_igcr3_spin_restricted_in_place_num_rep(
 #[pyfunction]
 pub fn apply_igcr4_spin_restricted_in_place_num_rep(
     mut vec: PyReadwriteArray2<Complex64>,
-    double_exp: PyReadonlyArray1<Complex64>,
-    pair_exp: PyReadonlyArray2<Complex64>,
-    tau_exp: PyReadonlyArray2<Complex64>,
-    omega_exp: PyReadonlyArray1<Complex64>,
-    eta_exp: PyReadonlyArray1<Complex64>,
-    rho_exp: PyReadonlyArray1<Complex64>,
-    sigma_exp: PyReadonlyArray1<Complex64>,
+    double_params: PyReadonlyArray1<f64>,
+    pair_params: PyReadonlyArray2<f64>,
+    tau_params: PyReadonlyArray2<f64>,
+    omega_params: PyReadonlyArray1<f64>,
+    eta_params: PyReadonlyArray1<f64>,
+    rho_params: PyReadonlyArray1<f64>,
+    sigma_params: PyReadonlyArray1<f64>,
     norb: usize,
-    occupations_a: PyReadonlyArray2<usize>,
-    occupations_b: PyReadonlyArray2<usize>,
+    alpha_occ: PyReadonlyArray2<u8>,
+    beta_occ: PyReadonlyArray2<u8>,
 ) {
-    let double_exp = double_exp.as_array();
-    let pair_exp = pair_exp.as_array();
-    let tau_exp = tau_exp.as_array();
-    let omega_exp = omega_exp.as_array();
-    let eta_exp = eta_exp.as_array();
-    let rho_exp = rho_exp.as_array();
-    let sigma_exp = sigma_exp.as_array();
+    let lam = double_params.as_array();
+    let pair = pair_params.as_array();
+    let tau = tau_params.as_array();
+    let omega = omega_params.as_array();
+    let eta = eta_params.as_array();
+    let rho = rho_params.as_array();
+    let sigma = sigma_params.as_array();
     let mut vec = vec.as_array_mut();
-    let occupations_a = occupations_a.as_array();
-    let occupations_b = occupations_b.as_array();
+    let alpha_occ = alpha_occ.as_array();
+    let beta_occ = beta_occ.as_array();
 
     let dim_a = vec.shape()[0];
     let dim_b = vec.shape()[1];
-    let n_alpha = occupations_a.shape()[1];
-    let n_beta = occupations_b.shape()[1];
 
-    let mut alpha_occ = Array2::<usize>::zeros((dim_a, norb));
-    let mut beta_occ = Array2::<usize>::zeros((dim_b, norb));
+    let mut ps_a = vec![0.0f64; dim_a];
+    let mut ps_b = vec![0.0f64; dim_b];
+    let mut ooo_a = vec![0.0f64; dim_a];
+    let mut ooo_b = vec![0.0f64; dim_b];
+    let mut ca = vec![0.0f64; dim_a * norb];
+    let mut cb = vec![0.0f64; dim_b * norb];
 
-    Zip::from(alpha_occ.rows_mut())
-        .and(occupations_a.rows())
-        .par_for_each(|mut row, orbs| {
-            for j in 0..n_alpha {
-                row[orbs[j]] = 1;
+    ps_a
+        .par_iter_mut()
+        .zip(ooo_a.par_iter_mut())
+        .zip(ca.par_chunks_mut(norb))
+        .enumerate()
+        .for_each(|(ia, ((ps, ooo), ca_row))| {
+            let occ = alpha_occ.row(ia);
+            for k in 0..norb {
+                ca_row[k] += lam[k] * occ[k] as f64;
+            }
+            for p in 0..norb {
+                if occ[p] == 0 {
+                    continue;
+                }
+                for q in (p + 1)..norb {
+                    let j = pair[(p, q)];
+                    if j == 0.0 {
+                        continue;
+                    }
+                    if occ[q] != 0 {
+                        *ps += j;
+                    }
+                    ca_row[q] += j;
+                }
+                for q in 0..p {
+                    let j = pair[(q, p)];
+                    if j != 0.0 {
+                        ca_row[q] += j;
+                    }
+                }
+            }
+            for p in 0..norb {
+                if occ[p] == 0 {
+                    continue;
+                }
+                let mut dot = 0.0f64;
+                for q in 0..norb {
+                    dot += tau[(p, q)] * occ[q] as f64;
+                }
+                ca_row[p] += dot;
+            }
+            let mut omega_idx = 0usize;
+            for p in 0..norb {
+                for q in (p + 1)..norb {
+                    for r in (q + 1)..norb {
+                        let w = omega[omega_idx];
+                        omega_idx += 1;
+                        if w == 0.0 {
+                            continue;
+                        }
+                        let ap = occ[p] as f64;
+                        let aq = occ[q] as f64;
+                        let ar = occ[r] as f64;
+                        *ooo += w * ap * aq * ar;
+                        ca_row[r] += w * ap * aq;
+                        ca_row[q] += w * ap * ar;
+                        ca_row[p] += w * aq * ar;
+                    }
+                }
             }
         });
 
-    Zip::from(beta_occ.rows_mut())
-        .and(occupations_b.rows())
-        .par_for_each(|mut row, orbs| {
-            for j in 0..n_beta {
-                row[orbs[j]] = 1;
+    ps_b
+        .par_iter_mut()
+        .zip(ooo_b.par_iter_mut())
+        .zip(cb.par_chunks_mut(norb))
+        .enumerate()
+        .for_each(|(ib, ((ps, ooo), cb_row))| {
+            let occ = beta_occ.row(ib);
+            for k in 0..norb {
+                cb_row[k] += lam[k] * occ[k] as f64;
+            }
+            for p in 0..norb {
+                if occ[p] == 0 {
+                    continue;
+                }
+                for q in (p + 1)..norb {
+                    let j = pair[(p, q)];
+                    if j == 0.0 {
+                        continue;
+                    }
+                    if occ[q] != 0 {
+                        *ps += j;
+                    }
+                    cb_row[q] += j;
+                }
+                for q in 0..p {
+                    let j = pair[(q, p)];
+                    if j != 0.0 {
+                        cb_row[q] += j;
+                    }
+                }
+            }
+            for p in 0..norb {
+                if occ[p] == 0 {
+                    continue;
+                }
+                let mut dot = 0.0f64;
+                for q in 0..norb {
+                    dot += tau[(p, q)] * occ[q] as f64;
+                }
+                cb_row[p] += dot;
+            }
+            let mut omega_idx = 0usize;
+            for p in 0..norb {
+                for q in (p + 1)..norb {
+                    for r in (q + 1)..norb {
+                        let w = omega[omega_idx];
+                        omega_idx += 1;
+                        if w == 0.0 {
+                            continue;
+                        }
+                        let ap = occ[p] as f64;
+                        let aq = occ[q] as f64;
+                        let ar = occ[r] as f64;
+                        *ooo += w * ap * aq * ar;
+                        cb_row[r] += w * ap * aq;
+                        cb_row[q] += w * ap * ar;
+                        cb_row[p] += w * aq * ar;
+                    }
+                }
             }
         });
 
     Zip::indexed(vec.rows_mut())
         .and(alpha_occ.rows())
-        .par_for_each(|_, mut row, occ_a| {
+        .par_for_each(|ia, mut row, occ_a| {
+            let ca_row = &ca[ia * norb..(ia + 1) * norb];
+            let scalar_a = ps_a[ia] + ooo_a[ia];
             for ib in 0..dim_b {
                 let occ_b = beta_occ.row(ib);
-                let mut phase = Complex64::new(1.0, 0.0);
+                let cb_row = &cb[ib * norb..(ib + 1) * norb];
+                let mut phi = scalar_a + ps_b[ib] + ooo_b[ib];
+                phi += dot_occ(ca_row, occ_b);
+                phi += dot_occ(cb_row, occ_a);
 
+                let mut eta_idx = 0usize;
                 for p in 0..norb {
-                    let count_p = occ_a[p] + occ_b[p];
-                    if count_p == 0 {
-                        continue;
-                    }
-                    if count_p == 2 {
-                        phase *= double_exp[p];
-                    }
-
+                    let dp = occ_a[p] != 0 && occ_b[p] != 0;
                     for q in (p + 1)..norb {
-                        let count_q = occ_a[q] + occ_b[q];
-                        if count_q == 0 {
-                            continue;
-                        }
-                        phase *= pow_small(pair_exp[(p, q)], count_p * count_q);
-                    }
-                }
-
-                for p in 0..norb {
-                    let count_p = occ_a[p] + occ_b[p];
-                    if count_p != 2 {
-                        continue;
-                    }
-                    for q in 0..norb {
-                        if p == q {
-                            continue;
-                        }
-                        let count_q = occ_a[q] + occ_b[q];
-                        if count_q != 0 {
-                            phase *= pow_small(tau_exp[(p, q)], count_q);
-                        }
-                    }
-                }
-
-                let mut omega_idx = 0;
-                for p in 0..norb {
-                    let count_p = occ_a[p] + occ_b[p];
-                    for q in (p + 1)..norb {
-                        let count_q = occ_a[q] + occ_b[q];
-                        for r in (q + 1)..norb {
-                            let count_r = occ_a[r] + occ_b[r];
-                            let exponent = count_p * count_q * count_r;
-                            if exponent != 0 {
-                                phase *= pow_small(omega_exp[omega_idx], exponent);
-                            }
-                            omega_idx += 1;
-                        }
-                    }
-                }
-
-                let mut eta_idx = 0;
-                for p in 0..norb {
-                    let count_p = occ_a[p] + occ_b[p];
-                    if count_p != 2 {
-                        for _q in (p + 1)..norb {
-                            eta_idx += 1;
-                        }
-                        continue;
-                    }
-                    for q in (p + 1)..norb {
-                        let count_q = occ_a[q] + occ_b[q];
-                        if count_q == 2 {
-                            phase *= eta_exp[eta_idx];
+                        if dp && occ_a[q] != 0 && occ_b[q] != 0 {
+                            phi += eta[eta_idx];
                         }
                         eta_idx += 1;
                     }
                 }
 
-                let mut rho_idx = 0;
+                let mut rho_idx = 0usize;
                 for p in 0..norb {
-                    let count_p = occ_a[p] + occ_b[p];
+                    let dp = occ_a[p] != 0 && occ_b[p] != 0;
                     for q in 0..norb {
                         if q == p {
                             continue;
                         }
-                        let count_q = occ_a[q] + occ_b[q];
+                        let count_q = occ_a[q] as f64 + occ_b[q] as f64;
                         for r in (q + 1)..norb {
                             if r == p {
                                 continue;
                             }
-                            let count_r = occ_a[r] + occ_b[r];
-                            let exponent = if count_p == 2 { count_q * count_r } else { 0 };
-                            if exponent != 0 {
-                                phase *= pow_small(rho_exp[rho_idx], exponent);
+                            if dp {
+                                let count_r = occ_a[r] as f64 + occ_b[r] as f64;
+                                phi += rho[rho_idx] * count_q * count_r;
                             }
                             rho_idx += 1;
                         }
                     }
                 }
 
-                let mut sigma_idx = 0;
+                let mut sigma_idx = 0usize;
                 for p in 0..norb {
-                    let count_p = occ_a[p] + occ_b[p];
+                    let count_p = occ_a[p] as f64 + occ_b[p] as f64;
                     for q in (p + 1)..norb {
-                        let count_q = occ_a[q] + occ_b[q];
+                        let count_q = occ_a[q] as f64 + occ_b[q] as f64;
                         for r in (q + 1)..norb {
-                            let count_r = occ_a[r] + occ_b[r];
+                            let count_r = occ_a[r] as f64 + occ_b[r] as f64;
                             for s in (r + 1)..norb {
-                                let count_s = occ_a[s] + occ_b[s];
+                                let count_s = occ_a[s] as f64 + occ_b[s] as f64;
                                 let exponent = count_p * count_q * count_r * count_s;
-                                if exponent != 0 {
-                                    phase *= pow_small(sigma_exp[sigma_idx], exponent);
+                                if exponent != 0.0 {
+                                    phi += sigma[sigma_idx] * exponent;
                                 }
                                 sigma_idx += 1;
                             }
@@ -499,7 +666,8 @@ pub fn apply_igcr4_spin_restricted_in_place_num_rep(
                     }
                 }
 
-                row[ib] *= phase;
+                let (s, c) = phi.sin_cos();
+                row[ib] *= Complex64::new(c, s);
             }
         });
 }
