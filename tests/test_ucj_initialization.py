@@ -1,7 +1,14 @@
 import numpy as np
 
 from xquces.orbitals import ov_generator_from_t1, ov_unitary_from_t1
-from xquces.ucj import UCJAnsatz, SpinRestrictedSpec, pair_params_from_t2
+from xquces.ucj import (
+    UCJAnsatz,
+    UCJLayer,
+    UCJRestrictedHeuristicSeed,
+    SpinBalancedSpec,
+    SpinRestrictedSpec,
+    heuristic_restricted_pair_params_from_t2,
+)
 
 
 def random_state(dim, seed):
@@ -39,7 +46,7 @@ def test_ov_unitary_from_t1_is_unitary():
 def test_pair_params_from_t2_shape_symmetry_zero_diag():
     t2 = np.zeros((2, 2, 2, 2), dtype=np.float64)
     t2[0, 1, 0, 1] = 0.7
-    pair = pair_params_from_t2(t2)
+    pair = heuristic_restricted_pair_params_from_t2(t2)
     assert pair.shape == (4, 4)
     assert np.allclose(pair, pair.T, atol=1e-12)
     assert np.allclose(np.diag(pair), 0.0, atol=1e-12)
@@ -48,7 +55,7 @@ def test_pair_params_from_t2_shape_symmetry_zero_diag():
 def test_pair_params_from_t2_nonzero_when_t2_nonzero():
     t2 = np.zeros((2, 2, 2, 2), dtype=np.float64)
     t2[0, 1, 0, 1] = 0.7
-    pair = pair_params_from_t2(t2)
+    pair = heuristic_restricted_pair_params_from_t2(t2)
     assert np.max(np.abs(pair)) > 0.0
 
 
@@ -57,7 +64,17 @@ def test_ucj_identity_spin_restricted_is_identity_action():
     nelec = (2, 1)
     dim = 24
     vec = random_state(dim, 20)
-    ansatz = UCJAnsatz.identity(norb, spin_restricted=True)
+    ansatz = UCJAnsatz(
+        layers=(
+            UCJLayer(
+                diagonal=SpinRestrictedSpec(
+                    double_params=np.zeros(norb),
+                    pair_params=np.zeros((norb, norb)),
+                ),
+                orbital_rotation=np.eye(norb, dtype=np.complex128),
+            ),
+        )
+    )
     out = ansatz.apply(vec, nelec)
     assert np.allclose(out, vec, atol=1e-12)
 
@@ -67,14 +84,28 @@ def test_ucj_identity_spin_balanced_is_identity_action():
     nelec = (2, 1)
     dim = 24
     vec = random_state(dim, 21)
-    ansatz = UCJAnsatz.identity(norb, spin_restricted=False)
+    ansatz = UCJAnsatz(
+        layers=(
+            UCJLayer(
+                diagonal=SpinBalancedSpec(
+                    same_spin_params=np.zeros((norb, norb)),
+                    mixed_spin_params=np.zeros((norb, norb)),
+                ),
+                orbital_rotation=np.eye(norb, dtype=np.complex128),
+            ),
+        )
+    )
     out = ansatz.apply(vec, nelec)
     assert np.allclose(out, vec, atol=1e-12)
 
 
 def test_ucj_from_ov_rotation_zero_t1_gives_identity():
     t1 = np.zeros((2, 2), dtype=np.complex128)
-    ansatz = UCJAnsatz.from_ov_rotation(t1)
+    ansatz = UCJRestrictedHeuristicSeed(
+        np.zeros((2, 2, 2, 2), dtype=np.float64),
+        t1=t1,
+        pair_scale=0.0,
+    ).build_ansatz()
     vec = random_state(36, 22)
     out = ansatz.apply(vec, nelec=(2, 2))
     assert np.allclose(out, vec, atol=1e-12)
@@ -90,7 +121,7 @@ def test_ucj_from_t_amplitudes_builds_valid_ansatz():
         ],
         dtype=np.float64,
     )
-    ansatz = UCJAnsatz.from_t_amplitudes(t2, t1=t1, pair_scale=0.5)
+    ansatz = UCJRestrictedHeuristicSeed(t2, t1=t1, pair_scale=0.5).build_ansatz()
     assert ansatz.norb == 4
     assert len(ansatz.layers) == 1
     assert isinstance(ansatz.layers[0].diagonal, SpinRestrictedSpec)
@@ -105,7 +136,7 @@ def test_ucj_from_t_amplitudes_builds_valid_ansatz():
 def test_ucj_from_t_amplitudes_zero_t2_zero_t1_is_identity_action():
     t2 = np.zeros((2, 2, 2, 2), dtype=np.float64)
     t1 = np.zeros((2, 2), dtype=np.float64)
-    ansatz = UCJAnsatz.from_t_amplitudes(t2, t1=t1)
+    ansatz = UCJRestrictedHeuristicSeed(t2, t1=t1).build_ansatz()
     vec = random_state(36, 23)
     out = ansatz.apply(vec, nelec=(2, 2))
     assert np.allclose(out, vec, atol=1e-12)
@@ -114,7 +145,7 @@ def test_ucj_from_t_amplitudes_zero_t2_zero_t1_is_identity_action():
 def test_ucj_from_t_amplitudes_nonzero_t2_changes_pair_params():
     t2 = np.zeros((2, 2, 2, 2), dtype=np.float64)
     t2[0, 1, 0, 1] = 0.6
-    ansatz = UCJAnsatz.from_t_amplitudes(t2)
+    ansatz = UCJRestrictedHeuristicSeed(t2).build_ansatz()
     pair = ansatz.layers[0].diagonal.pair_params
     assert np.max(np.abs(pair)) > 0.0
     assert np.allclose(pair, pair.T, atol=1e-12)

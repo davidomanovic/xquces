@@ -184,16 +184,11 @@ def _one_body_tensor(norb: int, nocc: int) -> np.ndarray:
 def _sector_rep_index(norb: int, nocc: int) -> np.ndarray:
     occ = occ_rows(norb, nocc)
     if nocc == 0:
-        return np.zeros((1, 1, 0, 0), dtype=np.int64)
-    rows = occ[:, None, :, None]
-    cols = occ[None, :, None, :]
-    return np.stack(
-        [
-            np.broadcast_to(rows, rows.shape[:-2] + (nocc, nocc)),
-            np.broadcast_to(cols, cols.shape[:-2] + (nocc, nocc)),
-        ],
-        axis=0,
-    )
+        return np.zeros((2, 1, 1, 0, 0), dtype=np.int64)
+    dim = len(occ)
+    rows = np.broadcast_to(occ[:, None, :, None], (dim, dim, nocc, nocc))
+    cols = np.broadcast_to(occ[None, :, None, :], (dim, dim, nocc, nocc))
+    return np.stack([rows, cols], axis=0)
 
 
 def _sector_representation(u: np.ndarray, norb: int, nocc: int) -> np.ndarray:
@@ -309,7 +304,9 @@ def _igcr4_feature_matrix(
         p, q, r = zip(*omega_idx)
         omega_feat = n[:, p] * n[:, q] * n[:, r]
         full_cubic = np.concatenate([tau_feat, omega_feat], axis=1)
-        blocks.append(full_cubic @ parameterization.cubic_reduction.physical_cubic_basis)
+        blocks.append(
+            full_cubic @ parameterization.cubic_reduction.physical_cubic_basis
+        )
     else:
         if parameterization.tau_indices:
             rows, cols = zip(*parameterization.tau_indices)
@@ -328,7 +325,9 @@ def _igcr4_feature_matrix(
         sigma_p, sigma_q, sigma_r, sigma_s = zip(*sigma_idx)
         sigma_feat = n[:, sigma_p] * n[:, sigma_q] * n[:, sigma_r] * n[:, sigma_s]
         full_quartic = np.concatenate([eta_feat, rho_feat, sigma_feat], axis=1)
-        blocks.append(full_quartic @ parameterization.quartic_reduction.physical_quartic_basis)
+        blocks.append(
+            full_quartic @ parameterization.quartic_reduction.physical_quartic_basis
+        )
     else:
         if parameterization.eta_indices:
             p, q = zip(*parameterization.eta_indices)
@@ -384,7 +383,9 @@ def make_restricted_gcr_jacobian(
     right_basis = _right_chart_basis(right_chart)
     tensor_a = _one_body_tensor(norb, nelec[0])
     tensor_b = _one_body_tensor(norb, nelec[1])
-    reference_mat = reshape_state(np.asarray(reference_vec, dtype=np.complex128), norb, nelec)
+    reference_mat = reshape_state(
+        np.asarray(reference_vec, dtype=np.complex128), norb, nelec
+    )
     dim_a, dim_b = reference_mat.shape
     diag_features = _diag_feature_matrix(parameterization, nelec)
     transform = _public_to_native_matrix(parameterization)
@@ -392,7 +393,9 @@ def make_restricted_gcr_jacobian(
     def jac(params: np.ndarray) -> np.ndarray:
         params = np.asarray(params, dtype=np.float64)
         if params.shape != (parameterization.n_params,):
-            raise ValueError(f"Expected {(parameterization.n_params,)}, got {params.shape}.")
+            raise ValueError(
+                f"Expected {(parameterization.n_params,)}, got {params.shape}."
+            )
         native = parameterization._native_parameters_from_public(params)
 
         n_left = parameterization.n_left_orbital_rotation_params
@@ -401,7 +404,7 @@ def make_restricted_gcr_jacobian(
 
         left_params = native[:n_left]
         diag_params = native[n_left:right_start]
-        right_params = native[right_start:right_start + n_right]
+        right_params = native[right_start : right_start + n_right]
 
         u_left = left_chart.unitary_from_parameters(left_params, norb)
         u_final = right_chart.unitary_from_parameters(right_params, norb)

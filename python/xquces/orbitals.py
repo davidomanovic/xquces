@@ -49,9 +49,13 @@ def ov_generator_from_t1(t1: np.ndarray) -> np.ndarray:
     nocc, nvirt = t1.shape
     norb = nocc + nvirt
     out = np.zeros((norb, norb), dtype=np.complex128)
-    out[nocc:, :nocc] = t1
-    out[:nocc, nocc:] = -t1.conj().T
+    out[nocc:, :nocc] = t1.T
+    out[:nocc, nocc:] = -t1.conj()
     return out
+
+
+def ov_unitary_from_t1(t1: np.ndarray, gauge_fix: bool = True) -> np.ndarray:
+    return unitary_from_generator(ov_generator_from_t1(t1), gauge_fix=gauge_fix)
 
 
 def ov_generator_from_params(params: np.ndarray, norb: int, nocc: int) -> np.ndarray:
@@ -60,7 +64,9 @@ def ov_generator_from_params(params: np.ndarray, norb: int, nocc: int) -> np.nda
     params = np.asarray(params, dtype=np.float64)
     if params.shape != (2 * ncomplex,):
         raise ValueError("wrong OV parameter vector size")
-    z = params[:ncomplex].reshape(nvirt, nocc) + 1j * params[ncomplex:].reshape(nvirt, nocc)
+    z = params[:ncomplex].reshape(nvirt, nocc) + 1j * params[ncomplex:].reshape(
+        nvirt, nocc
+    )
     out = np.zeros((norb, norb), dtype=np.complex128)
     out[nocc:, :nocc] = z
     out[:nocc, nocc:] = -z.conj().T
@@ -98,7 +104,9 @@ def _zrotg(a: complex, b: complex, tol: float = 1e-12) -> tuple[float, complex]:
     return float(c), complex(s)
 
 
-def _zrot(x: np.ndarray, y: np.ndarray, c: float, s: complex) -> tuple[np.ndarray, np.ndarray]:
+def _zrot(
+    x: np.ndarray, y: np.ndarray, c: float, s: complex
+) -> tuple[np.ndarray, np.ndarray]:
     x = np.asarray(x, dtype=np.complex128)
     y = np.asarray(y, dtype=np.complex128)
     x_new = c * x + s * y
@@ -106,7 +114,9 @@ def _zrot(x: np.ndarray, y: np.ndarray, c: float, s: complex) -> tuple[np.ndarra
     return x_new, y_new
 
 
-def givens_decomposition(mat: np.ndarray) -> tuple[list[tuple[float, complex, int, int]], np.ndarray]:
+def givens_decomposition(
+    mat: np.ndarray,
+) -> tuple[list[tuple[float, complex, int, int]], np.ndarray]:
     mat = np.asarray(mat, dtype=np.complex128)
     n, m = mat.shape
     if n != m:
@@ -261,7 +271,9 @@ def _apply_orbital_rotation_spinless(
             nelec,
         )
     for i, phase_shift in enumerate(phase_shifts):
-        indices = np.ascontiguousarray(_one_subspace_indices(norb, nelec, (i,)), dtype=np.uintp)
+        indices = np.ascontiguousarray(
+            _one_subspace_indices(norb, nelec, (i,)), dtype=np.uintp
+        )
         apply_phase_shift_in_place(
             vec,
             float(np.real(phase_shift)),
@@ -295,7 +307,9 @@ def _apply_orbital_rotation_spinful(
                 n_alpha,
             )
         for i, phase_shift in enumerate(phase_shifts):
-            indices = np.ascontiguousarray(_one_subspace_indices(norb, n_alpha, (i,)), dtype=np.uintp)
+            indices = np.ascontiguousarray(
+                _one_subspace_indices(norb, n_alpha, (i,)), dtype=np.uintp
+            )
             apply_phase_shift_in_place(
                 vec,
                 float(np.real(phase_shift)),
@@ -316,7 +330,9 @@ def _apply_orbital_rotation_spinful(
                 n_beta,
             )
         for i, phase_shift in enumerate(phase_shifts):
-            indices = np.ascontiguousarray(_one_subspace_indices(norb, n_beta, (i,)), dtype=np.uintp)
+            indices = np.ascontiguousarray(
+                _one_subspace_indices(norb, n_beta, (i,)), dtype=np.uintp
+            )
             apply_phase_shift_in_place(
                 vec,
                 float(np.real(phase_shift)),
