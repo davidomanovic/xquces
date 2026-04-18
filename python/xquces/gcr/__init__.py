@@ -14,6 +14,11 @@ from xquces.gcr.parameterization import (
 )
 from xquces.gcr.init import GaugeFixedGCRBalancedDFSeed
 from xquces.gcr.igcr2 import IGCR2SpinRestrictedParameterization
+from xquces.gcr.commutator_gcr2 import (
+    GCR2PairHopAnsatz,
+    GCR2PairHopParameterization,
+    gcr2_pairhop_middle_generator,
+)
 from xquces.gcr.igcr3 import IGCR3SpinRestrictedParameterization
 from xquces.gcr.igcr4 import IGCR4SpinRestrictedParameterization
 from xquces.gcr.restricted_jacobian import make_restricted_gcr_jacobian
@@ -38,6 +43,9 @@ __all__ = [
     "diagonal_rank",
     "gcr_from_ucj_ansatz",
     "GaugeFixedGCRBalancedDFSeed",
+    "GCR2PairHopAnsatz",
+    "GCR2PairHopParameterization",
+    "gcr2_pairhop_middle_generator",
     "IGCR2SpinRestrictedParameterization",
     "IGCR3SpinRestrictedParameterization",
     "IGCR4SpinRestrictedParameterization",

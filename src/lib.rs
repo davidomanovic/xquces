@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 
 mod orbital_rotation;
+mod gcr_pairhop;
 mod sqd;
 mod ucj_diag;
 
@@ -24,6 +25,14 @@ fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(
         ucj_diag::apply_igcr4_spin_restricted_in_place_num_rep,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        gcr_pairhop::apply_gcr2_pairhop_middle_in_place_num_rep,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        gcr_pairhop::apply_gcr2_pairhop_middle_cached_in_place_num_rep,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
