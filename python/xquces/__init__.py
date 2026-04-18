@@ -1,4 +1,10 @@
-from xquces.states import hartree_fock_state
+from xquces.states import (
+    determinant_index,
+    determinant_state,
+    hartree_fock_state,
+    linear_combination_state,
+    open_shell_singlet_state,
+)
 from xquces.hamiltonians import MolecularHamiltonianLinearOperator
 from xquces.sqd import run_sqd_from_statevector
 from xquces.gcr import (
@@ -32,9 +38,14 @@ from xquces.ucj.parameterization import (
 from xquces.optimize.linear_method import minimize_linear_method
 from xquces.gcr.igcr2 import IGCR2SpinRestrictedParameterization
 from xquces.gcr.igcr3 import IGCR3SpinRestrictedParameterization
+from xquces.utils import apply_spin_square, spin_square
 
 __all__ = [
     "hartree_fock_state",
+    "determinant_index",
+    "determinant_state",
+    "linear_combination_state",
+    "open_shell_singlet_state",
     "MolecularHamiltonianLinearOperator",
     "run_sqd_from_statevector",
     "GCRAnsatz",
@@ -62,4 +73,6 @@ __all__ = [
     "IGCR2SpinRestrictedParameterization",
     "IGCR3SpinRestrictedParameterization",
     "minimize_linear_method",
+    "apply_spin_square",
+    "spin_square",
 ]

@@ -10,7 +10,9 @@ from xquces.optimize.diagnostics import (
 )
 from xquces.optimize.linear_method import minimize_linear_method
 from xquces.optimize.metric_bfgs import (
+    make_expectation_penalty_state_objective,
     make_state_objective,
+    make_projector_penalty_state_objective,
     minimize_bfgs,
     minimize_metric_bfgs,
     minimize_svd_metric_bfgs,
@@ -25,7 +27,9 @@ __all__ = [
     "build_dense_hamiltonian",
     "energy_and_residual",
     "make_dense_hamiltonian",
+    "make_expectation_penalty_state_objective",
     "make_state_objective",
+    "make_projector_penalty_state_objective",
     "minimize_bfgs",
     "minimize_linear_method",
     "minimize_metric_bfgs",

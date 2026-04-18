@@ -25,6 +25,10 @@ from xquces.gcr.igcr4 import (
     _default_rho_indices,
     _default_sigma_indices,
 )
+from xquces.gcr.spin_balanced_igcr4 import (
+    IGCR4SpinBalancedFixedSectorParameterization,
+    IGCR4SpinSeparatedFixedSectorParameterization,
+)
 from xquces.orbitals import ov_generator_from_params
 
 
@@ -353,6 +357,18 @@ def _diag_feature_matrix(
         return _igcr3_feature_matrix(parameterization, nelec)
     if isinstance(parameterization, IGCR4SpinRestrictedParameterization):
         return _igcr4_feature_matrix(parameterization, nelec)
+    if isinstance(parameterization, IGCR4SpinBalancedFixedSectorParameterization):
+        if tuple(nelec) != tuple(parameterization.nelec):
+            raise ValueError(
+                "spin-balanced fixed-sector parameterization got wrong nelec"
+            )
+        return parameterization.diagonal_basis.features
+    if isinstance(parameterization, IGCR4SpinSeparatedFixedSectorParameterization):
+        if tuple(nelec) != tuple(parameterization.nelec):
+            raise ValueError(
+                "spin-separated fixed-sector parameterization got wrong nelec"
+            )
+        return parameterization.diagonal_basis.features
     raise TypeError(type(parameterization).__name__)
 
 
@@ -372,10 +388,15 @@ def make_restricted_gcr_jacobian(
         IGCR2SpinRestrictedParameterization
         | IGCR3SpinRestrictedParameterization
         | IGCR4SpinRestrictedParameterization
+        | IGCR4SpinBalancedFixedSectorParameterization
+        | IGCR4SpinSeparatedFixedSectorParameterization
     ),
     reference_vec: np.ndarray,
     nelec: tuple[int, int],
 ) -> Callable[[np.ndarray], np.ndarray]:
+    if isinstance(parameterization, IGCR4SpinSeparatedFixedSectorParameterization):
+        return _make_spin_separated_gcr_jacobian(parameterization, reference_vec, nelec)
+
     norb = parameterization.norb
     left_chart = parameterization._left_orbital_chart
     right_chart = parameterization.right_orbital_chart
@@ -480,5 +501,213 @@ def make_restricted_gcr_jacobian(
         if transform is not None:
             out = out @ transform
         return out
+
+    return jac
+
+
+def _batch_left_multiply(batch: np.ndarray, mat: np.ndarray) -> np.ndarray:
+    if batch.shape[0] == 0:
+        return np.zeros((0,) + mat.shape, dtype=np.complex128)
+    return np.einsum("jmn,nb->jmb", batch, mat, optimize=True)
+
+
+def _batch_right_transpose_multiply(batch: np.ndarray, mat: np.ndarray) -> np.ndarray:
+    if batch.shape[0] == 0:
+        return np.zeros((0,) + mat.shape, dtype=np.complex128)
+    return np.einsum("an,jbn->jab", mat, batch, optimize=True)
+
+
+def _make_spin_separated_gcr_jacobian(
+    parameterization: IGCR4SpinSeparatedFixedSectorParameterization,
+    reference_vec: np.ndarray,
+    nelec: tuple[int, int],
+) -> Callable[[np.ndarray], np.ndarray]:
+    if tuple(nelec) != tuple(parameterization.nelec):
+        raise ValueError("spin-separated fixed-sector parameterization got wrong nelec")
+
+    norb = parameterization.norb
+    left_chart_alpha = parameterization.left_orbital_chart_alpha
+    left_chart_beta = parameterization.left_orbital_chart_beta
+    right_chart_alpha = parameterization.right_orbital_chart_alpha
+    right_chart_beta = parameterization.right_orbital_chart_beta
+
+    left_basis_alpha = _left_chart_basis(left_chart_alpha, norb)
+    left_basis_beta = _left_chart_basis(left_chart_beta, norb)
+    right_basis_alpha = _right_chart_basis(right_chart_alpha)
+    right_basis_beta = _right_chart_basis(right_chart_beta)
+
+    tensor_a = _one_body_tensor(norb, nelec[0])
+    tensor_b = _one_body_tensor(norb, nelec[1])
+    reference_mat = reshape_state(
+        np.asarray(reference_vec, dtype=np.complex128), norb, nelec
+    )
+    dim_a, dim_b = reference_mat.shape
+    diag_features = parameterization.diagonal_basis.features
+
+    def jac(params: np.ndarray) -> np.ndarray:
+        params = np.asarray(params, dtype=np.float64)
+        if params.shape != (parameterization.n_params,):
+            raise ValueError(
+                f"Expected {(parameterization.n_params,)}, got {params.shape}."
+            )
+
+        (
+            left_alpha_params,
+            left_beta_params,
+            diag_params,
+            right_alpha_params,
+            right_beta_params,
+        ) = parameterization._split_params(params)
+
+        u_left_alpha = left_chart_alpha.unitary_from_parameters(
+            left_alpha_params,
+            norb,
+        )
+        u_left_beta = left_chart_beta.unitary_from_parameters(left_beta_params, norb)
+        u_final_alpha = right_chart_alpha.unitary_from_parameters(
+            right_alpha_params,
+            norb,
+        )
+        u_final_beta = right_chart_beta.unitary_from_parameters(
+            right_beta_params,
+            norb,
+        )
+        u_right_alpha = u_left_alpha.conj().T @ u_final_alpha
+        u_right_beta = u_left_beta.conj().T @ u_final_beta
+
+        kappa_left_alpha = _left_chart_kappa(
+            left_chart_alpha,
+            left_alpha_params,
+            norb,
+            basis=left_basis_alpha,
+        )
+        kappa_left_beta = _left_chart_kappa(
+            left_chart_beta,
+            left_beta_params,
+            norb,
+            basis=left_basis_beta,
+        )
+        kappa_final_alpha = _right_chart_kappa(
+            right_chart_alpha,
+            right_alpha_params,
+            norb,
+        )
+        kappa_final_beta = _right_chart_kappa(
+            right_chart_beta,
+            right_beta_params,
+            norb,
+        )
+
+        rep_left_alpha = _sector_representation(u_left_alpha, norb, nelec[0])
+        rep_left_beta = _sector_representation(u_left_beta, norb, nelec[1])
+        rep_right_alpha = _sector_representation(u_right_alpha, norb, nelec[0])
+        rep_right_beta = _sector_representation(u_right_beta, norb, nelec[1])
+
+        rotated_right = rep_right_alpha @ reference_mat @ rep_right_beta.T
+        phase = np.exp(1j * (diag_features @ diag_params)).reshape(dim_a, dim_b)
+        diagonalized = phase * rotated_right
+        state = rep_left_alpha @ diagonalized @ rep_left_beta.T
+
+        blocks = []
+
+        if left_alpha_params.size:
+            gen_left = _generator_batch_from_kappa(
+                kappa_left_alpha,
+                left_basis_alpha,
+            )
+            gen_right_from_left = -np.matmul(
+                u_left_alpha.conj().T,
+                np.matmul(gen_left, u_left_alpha),
+            )
+            left_a = _one_body_batch_to_sector(gen_left, tensor_a)
+            right_a = _one_body_batch_to_sector(gen_right_from_left, tensor_a)
+            d_rotated_right = _batch_left_multiply(right_a, rotated_right)
+            d_diagonalized = phase[None, :, :] * d_rotated_right
+            d_state = _batch_left_multiply(left_a, state)
+            d_state += _apply_batch_transform(
+                rep_left_alpha,
+                rep_left_beta,
+                d_diagonalized,
+            )
+            blocks.append(d_state.reshape(left_alpha_params.size, dim_a * dim_b).T)
+
+        if left_beta_params.size:
+            gen_left = _generator_batch_from_kappa(
+                kappa_left_beta,
+                left_basis_beta,
+            )
+            gen_right_from_left = -np.matmul(
+                u_left_beta.conj().T,
+                np.matmul(gen_left, u_left_beta),
+            )
+            left_b = _one_body_batch_to_sector(gen_left, tensor_b)
+            right_b = _one_body_batch_to_sector(gen_right_from_left, tensor_b)
+            d_rotated_right = _batch_right_transpose_multiply(
+                right_b,
+                rotated_right,
+            )
+            d_diagonalized = phase[None, :, :] * d_rotated_right
+            d_state = _batch_right_transpose_multiply(left_b, state)
+            d_state += _apply_batch_transform(
+                rep_left_alpha,
+                rep_left_beta,
+                d_diagonalized,
+            )
+            blocks.append(d_state.reshape(left_beta_params.size, dim_a * dim_b).T)
+
+        if diag_params.size:
+            d_diagonalized = (
+                1j
+                * diag_features.T.reshape(diag_params.size, dim_a, dim_b)
+                * diagonalized[None, :, :]
+            )
+            d_state = _apply_batch_transform(
+                rep_left_alpha,
+                rep_left_beta,
+                d_diagonalized,
+            )
+            blocks.append(d_state.reshape(diag_params.size, dim_a * dim_b).T)
+
+        if right_alpha_params.size:
+            gen_final = _generator_batch_from_kappa(
+                kappa_final_alpha,
+                right_basis_alpha,
+            )
+            gen_right_from_final = np.matmul(
+                u_left_alpha.conj().T,
+                np.matmul(gen_final, u_left_alpha),
+            )
+            right_a = _one_body_batch_to_sector(gen_right_from_final, tensor_a)
+            d_rotated_right = _batch_left_multiply(right_a, rotated_right)
+            d_diagonalized = phase[None, :, :] * d_rotated_right
+            d_state = _apply_batch_transform(
+                rep_left_alpha,
+                rep_left_beta,
+                d_diagonalized,
+            )
+            blocks.append(d_state.reshape(right_alpha_params.size, dim_a * dim_b).T)
+
+        if right_beta_params.size:
+            gen_final = _generator_batch_from_kappa(
+                kappa_final_beta,
+                right_basis_beta,
+            )
+            gen_right_from_final = np.matmul(
+                u_left_beta.conj().T,
+                np.matmul(gen_final, u_left_beta),
+            )
+            right_b = _one_body_batch_to_sector(gen_right_from_final, tensor_b)
+            d_rotated_right = _batch_right_transpose_multiply(right_b, rotated_right)
+            d_diagonalized = phase[None, :, :] * d_rotated_right
+            d_state = _apply_batch_transform(
+                rep_left_alpha,
+                rep_left_beta,
+                d_diagonalized,
+            )
+            blocks.append(d_state.reshape(right_beta_params.size, dim_a * dim_b).T)
+
+        if not blocks:
+            return np.zeros((dim_a * dim_b, 0), dtype=np.complex128)
+        return np.hstack(blocks)
 
     return jac

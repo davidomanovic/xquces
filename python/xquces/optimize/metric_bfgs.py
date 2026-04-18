@@ -64,6 +64,121 @@ def make_state_objective(
     return fun, jac, cache
 
 
+def make_projector_penalty_state_objective(
+    params_to_state: ArrayFunc,
+    state_jacobian: ArrayFunc,
+    hamiltonian,
+    projector_vectors: np.ndarray,
+    *,
+    penalty_weight: float,
+) -> tuple[ScalarFunc, ArrayFunc, dict]:
+    vectors = np.asarray(projector_vectors, dtype=np.complex128)
+    if vectors.ndim == 1:
+        vectors = vectors[:, None]
+    if vectors.ndim != 2:
+        raise ValueError("projector_vectors must be a vector or matrix")
+
+    q, _ = np.linalg.qr(vectors)
+    weight = float(penalty_weight)
+    cache: dict[str, np.ndarray | float | None] = {
+        "x": None,
+        "f": None,
+        "g": None,
+        "energy": None,
+        "projector_population": None,
+        "penalty": None,
+    }
+
+    def evaluate(x: np.ndarray) -> tuple[float, np.ndarray]:
+        x = np.asarray(x, dtype=np.float64)
+        if cache["x"] is not None and np.array_equal(x, cache["x"]):
+            return float(cache["f"]), np.asarray(cache["g"], dtype=np.float64)
+
+        psi = np.asarray(params_to_state(x), dtype=np.complex128)
+        hpsi = np.asarray(hamiltonian @ psi, dtype=np.complex128)
+        energy = float(np.real(np.vdot(psi, hpsi)))
+        coeff = q.conj().T @ psi
+        population = float(np.real(np.vdot(coeff, coeff)))
+        projected = q @ coeff
+        dpsi = state_jacobian(x)
+        gradient = state_energy_gradient(dpsi, hpsi - energy * psi)
+        if weight:
+            gradient += weight * state_energy_gradient(dpsi, projected)
+        objective = energy + weight * population
+
+        cache["x"] = x.copy()
+        cache["f"] = objective
+        cache["g"] = gradient
+        cache["energy"] = energy
+        cache["projector_population"] = population
+        cache["penalty"] = weight * population
+        return objective, gradient
+
+    def fun(x: np.ndarray) -> float:
+        return evaluate(x)[0]
+
+    def jac(x: np.ndarray) -> np.ndarray:
+        return evaluate(x)[1]
+
+    return fun, jac, cache
+
+
+def make_expectation_penalty_state_objective(
+    params_to_state: ArrayFunc,
+    state_jacobian: ArrayFunc,
+    hamiltonian,
+    operator_action: ArrayFunc,
+    *,
+    penalty_weight: float,
+    target: float = 0.0,
+) -> tuple[ScalarFunc, ArrayFunc, dict]:
+    weight = float(penalty_weight)
+    target_value = float(target)
+    cache: dict[str, np.ndarray | float | None] = {
+        "x": None,
+        "f": None,
+        "g": None,
+        "energy": None,
+        "operator_expectation": None,
+        "operator_target": target_value,
+        "penalty": None,
+    }
+
+    def evaluate(x: np.ndarray) -> tuple[float, np.ndarray]:
+        x = np.asarray(x, dtype=np.float64)
+        if cache["x"] is not None and np.array_equal(x, cache["x"]):
+            return float(cache["f"]), np.asarray(cache["g"], dtype=np.float64)
+
+        psi = np.asarray(params_to_state(x), dtype=np.complex128)
+        hpsi = np.asarray(hamiltonian @ psi, dtype=np.complex128)
+        opsi = np.asarray(operator_action(psi), dtype=np.complex128)
+        energy = float(np.real(np.vdot(psi, hpsi)))
+        expectation = float(np.real(np.vdot(psi, opsi)))
+        delta = expectation - target_value
+        dpsi = state_jacobian(x)
+
+        gradient = state_energy_gradient(dpsi, hpsi - energy * psi)
+        operator_gradient = state_energy_gradient(dpsi, opsi - expectation * psi)
+        gradient += 2.0 * weight * delta * operator_gradient
+        objective = energy + weight * delta * delta
+
+        cache["x"] = x.copy()
+        cache["f"] = objective
+        cache["g"] = gradient
+        cache["energy"] = energy
+        cache["operator_expectation"] = expectation
+        cache["penalty"] = weight * delta * delta
+        return objective, gradient
+
+    def fun(x: np.ndarray) -> float:
+        return evaluate(x)[0]
+
+    def jac(x: np.ndarray) -> np.ndarray:
+        return evaluate(x)[1]
+
+    return fun, jac, cache
+
+
 def tangent_metric_preconditioner(
     state_jacobian: ArrayFunc,
     x0: np.ndarray,

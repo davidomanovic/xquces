@@ -4,6 +4,8 @@ from scipy.sparse.linalg import LinearOperator
 
 from xquces.optimize import (
     energy_and_residual,
+    make_expectation_penalty_state_objective,
+    make_projector_penalty_state_objective,
     minimize_svd_metric_bfgs,
     tangent_residual_projection,
     tangent_svd_preconditioner,
@@ -87,3 +89,66 @@ def test_energy_and_residual_uses_hamiltonian_action():
 
     assert energy == pytest.approx(2.0)
     assert residual == pytest.approx(np.array([-1.0, 1.0]) / np.sqrt(2.0))
+
+
+def test_projector_penalty_state_objective_adds_population_gradient():
+    hamiltonian = np.diag([0.0, 1.0])
+    projector = np.array([1.0, 0.0], dtype=np.complex128)
+
+    def params_to_state(x):
+        theta = x[0]
+        return np.array([np.cos(theta), np.sin(theta)], dtype=np.complex128)
+
+    def state_jacobian(x):
+        theta = x[0]
+        return np.array([[-np.sin(theta)], [np.cos(theta)]], dtype=np.complex128)
+
+    fun, jac, cache = make_projector_penalty_state_objective(
+        params_to_state,
+        state_jacobian,
+        hamiltonian,
+        projector,
+        penalty_weight=2.0,
+    )
+    x = np.array([0.3])
+    theta = x[0]
+
+    assert fun(x) == pytest.approx(np.sin(theta) ** 2 + 2.0 * np.cos(theta) ** 2)
+    assert jac(x)[0] == pytest.approx(-2.0 * np.sin(theta) * np.cos(theta))
+    assert cache["energy"] == pytest.approx(np.sin(theta) ** 2)
+    assert cache["projector_population"] == pytest.approx(np.cos(theta) ** 2)
+
+
+def test_expectation_penalty_state_objective_adds_operator_gradient():
+    hamiltonian = np.diag([0.0, 1.0])
+    operator = np.diag([0.0, 2.0])
+
+    def params_to_state(x):
+        theta = x[0]
+        return np.array([np.cos(theta), np.sin(theta)], dtype=np.complex128)
+
+    def state_jacobian(x):
+        theta = x[0]
+        return np.array([[-np.sin(theta)], [np.cos(theta)]], dtype=np.complex128)
+
+    fun, jac, cache = make_expectation_penalty_state_objective(
+        params_to_state,
+        state_jacobian,
+        hamiltonian,
+        lambda psi: operator @ psi,
+        penalty_weight=0.25,
+        target=0.0,
+    )
+    x = np.array([0.3])
+    theta = x[0]
+    expectation = 2.0 * np.sin(theta) ** 2
+    expected_fun = np.sin(theta) ** 2 + 0.25 * expectation**2
+    expected_jac = (
+        2.0 * np.sin(theta) * np.cos(theta)
+        + 0.5 * expectation * 4.0 * np.sin(theta) * np.cos(theta)
+    )
+
+    assert fun(x) == pytest.approx(expected_fun)
+    assert jac(x)[0] == pytest.approx(expected_jac)
+    assert cache["energy"] == pytest.approx(np.sin(theta) ** 2)
+    assert cache["operator_expectation"] == pytest.approx(expectation)

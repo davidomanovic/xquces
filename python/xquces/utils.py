@@ -6,6 +6,7 @@ import pyscf.cc
 import pyscf.gto
 import pyscf.mcscf
 import pyscf.scf
+from pyscf.fci.spin_op import contract_ss
 
 
 def build_n2_mol(R: float, basis: str, *, symmetry: bool | str = "Dooh"):
@@ -35,14 +36,70 @@ def build_h4_square_mol(R: float, basis: str, *, symmetry: bool | str = False):
     return mol
 
 
-def run_rhf(mol, *, dm0=None, conv_tol: float = 1e-12, max_cycle: int = 200):
+def run_rhf(
+    mol,
+    *,
+    dm0=None,
+    init_guess: str | None = None,
+    conv_tol: float = 1e-12,
+    max_cycle: int = 200,
+):
     mf = pyscf.scf.RHF(mol)
+    if init_guess is not None:
+        mf.init_guess = init_guess
     mf.conv_tol = conv_tol
     mf.max_cycle = max_cycle
     mf.kernel(dm0=dm0)
     if not mf.converged:
         raise RuntimeError("RHF did not converge")
     return mf
+
+
+def run_lowest_rhf(
+    mol,
+    *,
+    dm0=None,
+    init_guesses=("atom", "minao", "hcore", "1e"),
+    random_trials: int = 4,
+    random_scale: float = 0.02,
+    random_seed: int = 9173,
+    conv_tol: float = 1e-12,
+    max_cycle: int = 200,
+):
+    candidates = []
+
+    def try_run(*, dm0_candidate=None, init_guess=None):
+        try:
+            candidates.append(
+                run_rhf(
+                    mol,
+                    dm0=dm0_candidate,
+                    init_guess=init_guess,
+                    conv_tol=conv_tol,
+                    max_cycle=max_cycle,
+                )
+            )
+        except RuntimeError:
+            return
+
+    if dm0 is not None:
+        try_run(dm0_candidate=dm0)
+
+    for guess in init_guesses:
+        try_run(init_guess=guess)
+
+    if random_trials:
+        mf = pyscf.scf.RHF(mol)
+        base_dm = mf.get_init_guess(key="minao")
+        rng = np.random.default_rng(random_seed)
+        for _ in range(int(random_trials)):
+            noise = rng.normal(size=base_dm.shape)
+            noise = random_scale * (noise + noise.T)
+            try_run(dm0_candidate=base_dm + noise)
+
+    if not candidates:
+        raise RuntimeError("No RHF candidate converged")
+    return min(candidates, key=lambda mf: float(mf.e_tot))
 
 
 def run_rccsd(
@@ -127,3 +184,18 @@ def active_hamiltonian_from_casscf(mc):
         np.asarray(eri, dtype=np.float64),
         float(ecore),
     )
+
+def apply_spin_square(fcivec: np.ndarray, norb: int, nelec: tuple[int, int]) -> np.ndarray:
+    """Apply the spin-squared operator in the fixed ``(n_alpha, n_beta)`` sector."""
+    if np.iscomplexobj(fcivec):
+        ci1 = contract_ss(fcivec.real, norb, nelec).astype(complex)
+        ci1 += 1j * contract_ss(fcivec.imag, norb, nelec)
+    else:
+        ci1 = contract_ss(fcivec, norb, nelec)
+    return np.asarray(ci1, dtype=np.complex128).reshape(np.asarray(fcivec).shape)
+
+
+def spin_square(fcivec: np.ndarray, norb: int, nelec: tuple[int, int]):
+    """Expectation value of spin squared operator on a state vector."""
+    ci1 = apply_spin_square(fcivec, norb, nelec)
+    return float(np.real(np.vdot(np.asarray(fcivec).reshape(-1), ci1.reshape(-1))))
