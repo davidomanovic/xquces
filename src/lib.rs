@@ -36,6 +36,10 @@ fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
+        gcr_pairhop::apply_gcr2_pairhop_product_middle_cached_in_place_num_rep,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
         orbital_rotation::apply_givens_rotation_in_place,
         m
     )?)?;

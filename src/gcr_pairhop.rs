@@ -309,6 +309,38 @@ fn build_cached_transitions(
     Ok(transitions)
 }
 
+fn apply_diagonal_phase(state: &mut [Complex64], diag_values: &[f64], scale: f64) {
+    for (slot, value) in state.iter_mut().zip(diag_values.iter()) {
+        let phase = scale * value;
+        *slot *= Complex64::new(phase.cos(), phase.sin());
+    }
+}
+
+fn apply_pairhop_product_gate(
+    state: &mut [Complex64],
+    theta: f64,
+    gate_source: &[usize],
+    gate_target: &[usize],
+    gate_sign: &[f64],
+    start: usize,
+    stop: usize,
+) {
+    if theta == 0.0 || start == stop {
+        return;
+    }
+    let c = theta.cos();
+    let s = theta.sin();
+    for idx in start..stop {
+        let source = gate_source[idx];
+        let target = gate_target[idx];
+        let sign_s = gate_sign[idx] * s;
+        let v_source = state[source];
+        let v_target = state[target];
+        state[source] = v_source * c - v_target * sign_s;
+        state[target] = v_target * c + v_source * sign_s;
+    }
+}
+
 #[pyfunction]
 pub fn apply_gcr2_pairhop_middle_cached_in_place_num_rep(
     mut vec: PyReadwriteArray2<Complex64>,
@@ -357,6 +389,94 @@ pub fn apply_gcr2_pairhop_middle_cached_in_place_num_rep(
         taylor_tol,
         taylor_max_terms,
     );
+
+    for (slot, value) in vec_view.iter_mut().zip(state.into_iter()) {
+        *slot = value;
+    }
+    Ok(())
+}
+
+#[pyfunction]
+pub fn apply_gcr2_pairhop_product_middle_cached_in_place_num_rep(
+    mut vec: PyReadwriteArray2<Complex64>,
+    pair_params: PyReadonlyArray1<f64>,
+    pair_hop_params: PyReadonlyArray1<f64>,
+    diag_features: PyReadonlyArray2<f64>,
+    gate_source: PyReadonlyArray1<usize>,
+    gate_target: PyReadonlyArray1<usize>,
+    gate_sign: PyReadonlyArray1<f64>,
+    gate_starts: PyReadonlyArray1<usize>,
+    gate_order: PyReadonlyArray1<usize>,
+) -> PyResult<()> {
+    let mut vec_view = vec.as_array_mut();
+    let dim = vec_view.shape()[0] * vec_view.shape()[1];
+    let pair_params = pair_params.as_slice()?;
+    let pair_hop_params = pair_hop_params.as_slice()?;
+    let diag_features = diag_features.as_array();
+    if diag_features.shape()[0] != dim {
+        return Err(PyValueError::new_err(
+            "diag_features first dimension must match flattened state size",
+        ));
+    }
+    if diag_features.shape()[1] != pair_params.len()
+        || diag_features.shape()[1] != pair_hop_params.len()
+    {
+        return Err(PyValueError::new_err(
+            "parameter lengths must match diag_features",
+        ));
+    }
+
+    let gate_source = gate_source.as_slice()?;
+    let gate_target = gate_target.as_slice()?;
+    let gate_sign = gate_sign.as_slice()?;
+    if gate_target.len() != gate_source.len() || gate_sign.len() != gate_source.len() {
+        return Err(PyValueError::new_err(
+            "gate transition arrays must have matching lengths",
+        ));
+    }
+    for (&source, &target) in gate_source.iter().zip(gate_target.iter()) {
+        if source >= dim || target >= dim {
+            return Err(PyValueError::new_err("gate transition index out of bounds"));
+        }
+    }
+
+    let gate_starts = gate_starts.as_slice()?;
+    if gate_starts.len() != pair_hop_params.len() + 1 {
+        return Err(PyValueError::new_err(
+            "gate_starts must have length n_pair_hop_params + 1",
+        ));
+    }
+    if gate_starts[0] != 0 || *gate_starts.last().unwrap() != gate_source.len() {
+        return Err(PyValueError::new_err("gate_starts has inconsistent bounds"));
+    }
+    for window in gate_starts.windows(2) {
+        if window[0] > window[1] {
+            return Err(PyValueError::new_err("gate_starts must be sorted"));
+        }
+    }
+
+    let gate_order = gate_order.as_slice()?;
+    for &pair_index in gate_order {
+        if pair_index >= pair_hop_params.len() {
+            return Err(PyValueError::new_err("gate_order index out of bounds"));
+        }
+    }
+
+    let diag_values = build_diag_values_from_features(diag_features, pair_params)?;
+    let mut state: Vec<Complex64> = vec_view.iter().copied().collect();
+    apply_diagonal_phase(&mut state, &diag_values, 0.5);
+    for &pair_index in gate_order {
+        apply_pairhop_product_gate(
+            &mut state,
+            pair_hop_params[pair_index],
+            gate_source,
+            gate_target,
+            gate_sign,
+            gate_starts[pair_index],
+            gate_starts[pair_index + 1],
+        );
+    }
+    apply_diagonal_phase(&mut state, &diag_values, 0.5);
 
     for (slot, value) in vec_view.iter_mut().zip(state.into_iter()) {
         *slot = value;

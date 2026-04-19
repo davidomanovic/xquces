@@ -4,7 +4,10 @@ import ffsim
 from xquces.gcr.commutator_gcr2 import (
     GCR2PairHopAnsatz,
     GCR2PairHopParameterization,
+    GCR2ProductPairHopAnsatz,
+    GCR2ProductPairHopParameterization,
     apply_gcr2_pairhop_middle_in_place_num_rep,
+    apply_gcr2_pairhop_product_middle_cached_in_place_num_rep,
     gcr2_pairhop_middle_generator,
 )
 from xquces.gcr.igcr2 import IGCR2SpinRestrictedParameterization
@@ -15,6 +18,17 @@ def test_zero_parameters_are_identity_on_reference():
     norb = 4
     nelec = (2, 2)
     param = GCR2PairHopParameterization(norb, nocc=2)
+    reference = ffsim.hartree_fock_state(norb, nelec)
+
+    state = param.params_to_vec(reference, nelec)(np.zeros(param.n_params))
+
+    assert np.allclose(state, reference)
+
+
+def test_product_zero_parameters_are_identity_on_reference():
+    norb = 4
+    nelec = (2, 2)
+    param = GCR2ProductPairHopParameterization(norb, nocc=2)
     reference = ffsim.hartree_fock_state(norb, nelec)
 
     state = param.params_to_vec(reference, nelec)(np.zeros(param.n_params))
@@ -51,6 +65,36 @@ def test_pairhop_ansatz_preserves_norm():
     state = param.params_to_vec(reference, nelec)(x)
 
     assert np.isclose(np.linalg.norm(state), 1.0)
+
+
+def test_product_pairhop_ansatz_preserves_norm():
+    norb = 4
+    nelec = (2, 2)
+    param = GCR2ProductPairHopParameterization(norb, nocc=2)
+    reference = ffsim.hartree_fock_state(norb, nelec)
+    rng = np.random.default_rng(17)
+    x = 0.05 * rng.normal(size=param.n_params)
+
+    state = param.params_to_vec(reference, nelec)(x)
+
+    assert np.isclose(np.linalg.norm(state), 1.0)
+
+
+def test_product_matches_exact_middle_when_pair_hop_is_zero():
+    norb = 4
+    nelec = (2, 2)
+    reference = ffsim.hartree_fock_state(norb, nelec)
+    rng = np.random.default_rng(23)
+    exact_param = GCR2PairHopParameterization(norb, nocc=2)
+    product_param = GCR2ProductPairHopParameterization(norb, nocc=2)
+    x = 0.03 * rng.normal(size=exact_param.n_params)
+    left, pair, pair_hop, right = exact_param._split(x)
+    x = np.concatenate([left, pair, np.zeros_like(pair_hop), right])
+
+    psi_exact = exact_param.params_to_vec(reference, nelec)(x)
+    psi_product = product_param.params_to_vec(reference, nelec)(x)
+
+    assert np.linalg.norm(psi_exact - psi_product) < 1e-10
 
 
 def test_ucj_seed_maps_to_zero_pair_hop_sector():
@@ -123,3 +167,30 @@ def test_rust_pairhop_action_matches_sparse_reference():
     psi_sparse = sparse_ansatz.apply(reference, nelec)
 
     assert np.linalg.norm(psi_rust - psi_sparse) < 1e-10
+
+
+def test_rust_product_pairhop_action_matches_numpy_reference():
+    if apply_gcr2_pairhop_product_middle_cached_in_place_num_rep is None:
+        return
+    norb = 4
+    nelec = (2, 2)
+    param = GCR2ProductPairHopParameterization(norb, nocc=2)
+    reference = ffsim.hartree_fock_state(norb, nelec)
+    rng = np.random.default_rng(43)
+    x = 0.07 * rng.normal(size=param.n_params)
+    ansatz = param.ansatz_from_parameters(x)
+    numpy_ansatz = GCR2ProductPairHopAnsatz(
+        pair_params=ansatz.pair_params,
+        pair_hop_params=ansatz.pair_hop_params,
+        left=ansatz.left,
+        right=ansatz.right,
+        norb=ansatz.norb,
+        nocc=ansatz.nocc,
+        pairs=ansatz.pairs,
+        use_rust=False,
+    )
+
+    psi_rust = ansatz.apply(reference, nelec)
+    psi_numpy = numpy_ansatz.apply(reference, nelec)
+
+    assert np.linalg.norm(psi_rust - psi_numpy) < 1e-12

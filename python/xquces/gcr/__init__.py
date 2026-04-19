@@ -17,7 +17,17 @@ from xquces.gcr.igcr2 import IGCR2SpinRestrictedParameterization
 from xquces.gcr.commutator_gcr2 import (
     GCR2PairHopAnsatz,
     GCR2PairHopParameterization,
+    GCR2ProductPairHopAnsatz,
+    GCR2ProductPairHopParameterization,
+    apply_gcr2_pairhop_product_middle,
     gcr2_pairhop_middle_generator,
+)
+from xquces.gcr.bridge_gcr2 import (
+    GCR2FullUnitaryChart,
+    GCR2SplitBridgeAnsatz,
+    GCR2SplitBridgeParameterization,
+    GCR2UntiedSplitBridgeAnsatz,
+    GCR2UntiedSplitBridgeParameterization,
 )
 from xquces.gcr.igcr3 import IGCR3SpinRestrictedParameterization
 from xquces.gcr.igcr4 import IGCR4SpinRestrictedParameterization
@@ -45,6 +55,14 @@ __all__ = [
     "GaugeFixedGCRBalancedDFSeed",
     "GCR2PairHopAnsatz",
     "GCR2PairHopParameterization",
+    "GCR2ProductPairHopAnsatz",
+    "GCR2ProductPairHopParameterization",
+    "GCR2FullUnitaryChart",
+    "GCR2SplitBridgeAnsatz",
+    "GCR2SplitBridgeParameterization",
+    "GCR2UntiedSplitBridgeAnsatz",
+    "GCR2UntiedSplitBridgeParameterization",
+    "apply_gcr2_pairhop_product_middle",
     "gcr2_pairhop_middle_generator",
     "IGCR2SpinRestrictedParameterization",
     "IGCR3SpinRestrictedParameterization",

@@ -18,10 +18,12 @@ try:
     from xquces._lib import (
         apply_gcr2_pairhop_middle_cached_in_place_num_rep,
         apply_gcr2_pairhop_middle_in_place_num_rep,
+        apply_gcr2_pairhop_product_middle_cached_in_place_num_rep,
     )
 except ImportError:  # pragma: no cover - only used before rebuilding the Rust extension
     apply_gcr2_pairhop_middle_cached_in_place_num_rep = None
     apply_gcr2_pairhop_middle_in_place_num_rep = None
+    apply_gcr2_pairhop_product_middle_cached_in_place_num_rep = None
 
 
 def _validate_pairs(
@@ -167,6 +169,125 @@ def _pair_hop_transition_arrays(
     )
 
 
+@cache
+def _edge_coloring_matchings(
+    norb: int,
+    pairs: tuple[tuple[int, int], ...],
+) -> np.ndarray:
+    pair_to_index = {pair: idx for idx, pair in enumerate(pairs)}
+    vertices: list[int | None] = list(range(norb))
+    if norb % 2:
+        vertices.append(None)
+    nvertices = len(vertices)
+    order: list[int] = []
+    for _ in range(nvertices - 1):
+        for i in range(nvertices // 2):
+            p = vertices[i]
+            q = vertices[nvertices - 1 - i]
+            if p is None or q is None:
+                continue
+            pair = (p, q) if p < q else (q, p)
+            order.append(pair_to_index[pair])
+        vertices = [vertices[0], vertices[-1], *vertices[1:-1]]
+    return np.asarray(order, dtype=np.uintp)
+
+
+@cache
+def _pair_hop_gate_arrays(
+    norb: int,
+    nelec: tuple[int, int],
+    pairs: tuple[tuple[int, int], ...],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    sources = []
+    targets = []
+    signs = []
+    starts = [0]
+    for mat in _pair_hop_matrices(norb, nelec, pairs):
+        coo = mat.tocoo()
+        mask = coo.col < coo.row
+        source = np.asarray(coo.col[mask], dtype=np.uintp)
+        target = np.asarray(coo.row[mask], dtype=np.uintp)
+        sign = np.asarray(coo.data.real[mask], dtype=np.float64)
+        sources.append(source)
+        targets.append(target)
+        signs.append(sign)
+        starts.append(starts[-1] + len(source))
+    if not sources:
+        empty_idx = np.zeros(0, dtype=np.uintp)
+        empty_sign = np.zeros(0, dtype=np.float64)
+        return empty_idx, empty_idx, empty_sign, np.zeros(1, dtype=np.uintp)
+    return (
+        np.concatenate(sources),
+        np.concatenate(targets),
+        np.concatenate(signs),
+        np.asarray(starts, dtype=np.uintp),
+    )
+
+
+def _apply_pairhop_gate_numpy(
+    state: np.ndarray,
+    theta: float,
+    source: np.ndarray,
+    target: np.ndarray,
+    sign: np.ndarray,
+) -> None:
+    if theta == 0.0 or source.size == 0:
+        return
+    c = float(np.cos(theta))
+    s = float(np.sin(theta))
+    v_source = state[source].copy()
+    v_target = state[target].copy()
+    signed_s = sign * s
+    state[source] = c * v_source - signed_s * v_target
+    state[target] = c * v_target + signed_s * v_source
+
+
+def apply_gcr2_pairhop_product_middle(
+    vec: np.ndarray,
+    pair_params: np.ndarray,
+    pair_hop_params: np.ndarray,
+    norb: int,
+    nelec: tuple[int, int],
+    pairs: tuple[tuple[int, int], ...],
+    copy: bool = True,
+) -> np.ndarray:
+    """Apply the circuit/product-form GCR-2 pair-hop middle layer.
+
+    The product is ordered by an edge coloring of the complete orbital graph:
+
+        exp(iD/2) prod_(p,q) exp(t_pq C_pq) exp(iD/2).
+
+    Each matching contains disjoint pair-hop gates, so it is circuit-parallel in
+    the ideal all-to-all orbital layout.  This is intentionally a product ansatz,
+    not an approximation hidden behind the full ``exp(iD + C)`` interface.
+    """
+
+    pair_params = np.asarray(pair_params, dtype=np.float64)
+    pair_hop_params = np.asarray(pair_hop_params, dtype=np.float64)
+    if pair_params.shape != (len(pairs),):
+        raise ValueError("pair_params has the wrong shape")
+    if pair_hop_params.shape != (len(pairs),):
+        raise ValueError("pair_hop_params has the wrong shape")
+
+    out = np.array(vec, dtype=np.complex128, copy=copy)
+    phases = _diag2_features(norb, nelec, pairs) @ pair_params
+    out *= np.exp(0.5j * phases)
+    source, target, sign, starts = _pair_hop_gate_arrays(norb, nelec, pairs)
+    for pair_index in _edge_coloring_matchings(norb, pairs):
+        pair_index = int(pair_index)
+        start = int(starts[pair_index])
+        stop = int(starts[pair_index + 1])
+        _apply_pairhop_gate_numpy(
+            out,
+            float(pair_hop_params[pair_index]),
+            source[start:stop],
+            target[start:stop],
+            sign[start:stop],
+        )
+    out *= np.exp(0.5j * phases)
+    return out
+
+
 def gcr2_pairhop_middle_generator(
     pair_params: np.ndarray,
     pair_hop_params: np.ndarray,
@@ -278,6 +399,75 @@ class GCR2PairHopAnsatz:
             out = flatten_state(out2)
         else:
             out = expm_multiply(self.middle_generator(nelec), out)
+        return apply_orbital_rotation(
+            out,
+            self.left,
+            self.norb,
+            nelec,
+            copy=False,
+        )
+
+
+@dataclass(frozen=True)
+class GCR2ProductPairHopAnsatz:
+    """Circuit-product GCR-2 pair-hop ansatz.
+
+    The middle layer is
+
+        exp(iD_2/2) prod_pq exp(c_pq (P_p^dag P_q - P_q^dag P_p)) exp(iD_2/2),
+
+    where the product is ordered by commuting matchings.  This is the
+    circuit-realizable counterpart of :class:`GCR2PairHopAnsatz`.
+    """
+
+    pair_params: np.ndarray
+    pair_hop_params: np.ndarray
+    left: np.ndarray
+    right: np.ndarray
+    norb: int
+    nocc: int
+    pairs: tuple[tuple[int, int], ...]
+    use_rust: bool = True
+
+    def apply(self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True) -> np.ndarray:
+        out = apply_orbital_rotation(
+            vec,
+            self.right,
+            self.norb,
+            nelec,
+            copy=copy,
+        )
+        use_rust_middle = (
+            self.use_rust
+            and apply_gcr2_pairhop_product_middle_cached_in_place_num_rep is not None
+        )
+        if use_rust_middle:
+            out2 = reshape_state(out, self.norb, nelec)
+            source, target, sign, starts = _pair_hop_gate_arrays(
+                self.norb, nelec, self.pairs
+            )
+            apply_gcr2_pairhop_product_middle_cached_in_place_num_rep(
+                out2,
+                self.pair_params,
+                self.pair_hop_params,
+                _diag2_features(self.norb, nelec, self.pairs),
+                source,
+                target,
+                sign,
+                starts,
+                _edge_coloring_matchings(self.norb, self.pairs),
+            )
+            out = flatten_state(out2)
+        else:
+            out = apply_gcr2_pairhop_product_middle(
+                out,
+                self.pair_params,
+                self.pair_hop_params,
+                self.norb,
+                nelec,
+                self.pairs,
+                copy=False,
+            )
         return apply_orbital_rotation(
             out,
             self.left,
@@ -448,3 +638,30 @@ class GCR2PairHopParameterization:
             )
 
         return func
+
+
+@dataclass(frozen=True)
+class GCR2ProductPairHopParameterization(GCR2PairHopParameterization):
+    """Parameterization for the circuit-product GCR-2 pair-hop ansatz."""
+
+    def ansatz_from_parameters(self, params: np.ndarray) -> GCR2ProductPairHopAnsatz:
+        left, pair, pair_hop, right = self._split(params)
+        base_ansatz = self._base.ansatz_from_parameters(
+            self._base_params_from_split(left, pair, right)
+        )
+        if not isinstance(base_ansatz, IGCR2Ansatz):
+            raise TypeError("base parameterization returned an unexpected ansatz")
+        pair_matrix = np.asarray(base_ansatz.diagonal.pair, dtype=np.float64)
+        pair_values = np.asarray(
+            [pair_matrix[p, q] for p, q in self._pairs],
+            dtype=np.float64,
+        )
+        return GCR2ProductPairHopAnsatz(
+            pair_params=pair_values,
+            pair_hop_params=np.asarray(pair_hop, dtype=np.float64),
+            left=np.asarray(base_ansatz.left, dtype=np.complex128),
+            right=np.asarray(base_ansatz.right, dtype=np.complex128),
+            norb=self.norb,
+            nocc=self.nocc,
+            pairs=self._pairs,
+        )
