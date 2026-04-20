@@ -77,6 +77,29 @@ def test_pair_reference_params_to_vec_matches_ansatz_apply():
     _assert_same_state_up_to_phase(psi_a, psi_b, atol=1e-10)
 
 
+def test_pair_reference_transfer_relabels_pair_block():
+    param = GCR2PairReferenceParameterization(norb=4, nocc=2)
+    x = np.zeros(param.n_params, dtype=np.float64)
+    _, _, pair_reference, _ = param._split(x)
+    pair_reference[:] = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+    x = np.concatenate([
+        np.zeros(param.n_left_orbital_rotation_params, dtype=np.float64),
+        np.zeros(param.n_pair_params, dtype=np.float64),
+        pair_reference,
+        np.zeros(param.n_right_orbital_rotation_params, dtype=np.float64),
+    ])
+
+    transferred = param.transfer_parameters_from(
+        x,
+        old_for_new=np.array([1, 0, 3, 2]),
+        phases=np.ones(4, dtype=np.complex128),
+    )
+    _, _, transferred_pair_reference, _ = param._split(transferred)
+
+    expected = np.array([-1.0, 5.0, 4.0, 3.0, 2.0, -6.0])
+    assert np.allclose(transferred_pair_reference, expected)
+
+
 def test_pair_reference_restricted_jacobian_matches_finite_difference():
     norb = 4
     nocc = 2
