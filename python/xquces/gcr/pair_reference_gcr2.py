@@ -19,6 +19,7 @@ from xquces.gcr.igcr2 import (
     IGCR2SpinRestrictedParameterization,
     IGCR2SpinRestrictedSpec,
     _symmetric_matrix_from_values,
+    orbital_relabeling_from_overlap,
 )
 from xquces.orbitals import apply_orbital_rotation
 from xquces.ucj.model import UCJAnsatz
@@ -42,6 +43,68 @@ def apply_pair_reference_product(
         pairs,
         copy=copy,
     )
+
+
+def _transfer_pair_reference_params(
+    pair_reference_params: np.ndarray,
+    previous_pairs: tuple[tuple[int, int], ...],
+    new_pairs: tuple[tuple[int, int], ...],
+    old_for_new: np.ndarray | None,
+    phases: np.ndarray | None,
+) -> np.ndarray:
+    pair_reference_params = np.asarray(pair_reference_params, dtype=np.float64)
+    if pair_reference_params.shape != (len(previous_pairs),):
+        raise ValueError("pair_reference_params has the wrong shape")
+    if old_for_new is None:
+        if previous_pairs == new_pairs:
+            return np.array(pair_reference_params, copy=True)
+        previous_map = {
+            pair: float(pair_reference_params[idx])
+            for idx, pair in enumerate(previous_pairs)
+        }
+        return np.asarray(
+            [previous_map.get(pair, 0.0) for pair in new_pairs],
+            dtype=np.float64,
+        )
+
+    old_for_new = np.asarray(old_for_new, dtype=np.int64)
+    if old_for_new.ndim != 1:
+        raise ValueError("old_for_new must be one-dimensional")
+    norb = old_for_new.size
+    if phases is None:
+        phase_arr = np.ones(norb, dtype=np.complex128)
+    else:
+        phase_arr = np.asarray(phases, dtype=np.complex128)
+        if phase_arr.shape != (norb,):
+            raise ValueError("phases must have shape (norb,)")
+
+    current_for_old = np.empty_like(old_for_new)
+    current_for_old[old_for_new] = np.arange(norb)
+
+    new_map: dict[tuple[int, int], float] = {}
+    for idx, (p_old, q_old) in enumerate(previous_pairs):
+        p_new = int(current_for_old[p_old])
+        q_new = int(current_for_old[q_old])
+        coeff = float(pair_reference_params[idx])
+
+        gamma = (phase_arr[p_new] ** 2) * np.conjugate(phase_arr[q_new]) ** 2
+        if abs(np.imag(gamma)) > 1e-8 or not np.isclose(
+            abs(np.real(gamma)), 1.0, atol=1e-8
+        ):
+            raise ValueError(
+                "pair-reference transfer encountered non-real pair phase; "
+                "this parameterization only supports real pair-hop angles."
+            )
+        coeff *= float(np.real(gamma))
+
+        if p_new > q_new:
+            p_new, q_new = q_new, p_new
+            coeff = -coeff
+
+        key = (p_new, q_new)
+        new_map[key] = new_map.get(key, 0.0) + coeff
+
+    return np.asarray([new_map.get(pair, 0.0) for pair in new_pairs], dtype=np.float64)
 
 
 def _apply_pair_reference_product_batch(
@@ -463,35 +526,55 @@ class GCR2PairReferenceParameterization:
             if params.shape != (self.n_params,):
                 raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
             return np.array(params, copy=True)
+
+        if orbital_overlap is not None:
+            if old_for_new is not None or phases is not None:
+                raise ValueError(
+                    "Pass either orbital_overlap or explicit relabeling, not both."
+                )
+            old_for_new, phases = orbital_relabeling_from_overlap(
+                orbital_overlap, nocc=self.nocc, block_diagonal=block_diagonal
+            )
+
         if isinstance(previous_parameterization, GCR2PairReferenceParameterization):
-            ansatz = previous_parameterization.ansatz_from_parameters(previous_parameters)
-            base_ansatz = IGCR2Ansatz(
-                diagonal=IGCR2SpinRestrictedSpec(
-                    pair=_symmetric_matrix_from_values(
-                        ansatz.pair_params,
-                        previous_parameterization.norb,
-                        list(previous_parameterization.pair_indices),
-                    )
-                ),
-                left=np.asarray(ansatz.left, dtype=np.complex128),
-                right=np.asarray(ansatz.right, dtype=np.complex128),
-                nocc=ansatz.nocc,
+            prev_params = np.asarray(previous_parameters, dtype=np.float64)
+            if prev_params.shape != (previous_parameterization.n_params,):
+                raise ValueError(
+                    f"Expected {(previous_parameterization.n_params,)}, got {prev_params.shape}."
+                )
+            prev_left, prev_pair, prev_pair_reference, prev_right = (
+                previous_parameterization._split(prev_params)
             )
             base_params = self._base.transfer_parameters_from(
-                previous_parameterization._base.parameters_from_ansatz(base_ansatz),
+                previous_parameterization._base_params_from_split(
+                    prev_left, prev_pair, prev_right
+                ),
                 previous_parameterization=previous_parameterization._base,
                 old_for_new=old_for_new,
                 phases=phases,
-                orbital_overlap=orbital_overlap,
+                orbital_overlap=None,
                 block_diagonal=block_diagonal,
             )
-            return self.parameters_from_igcr2(base_params, parameterization=self._base)
+            n_left = self.n_left_orbital_rotation_params
+            n_pair = self.n_pair_params
+            left = base_params[:n_left]
+            pair = base_params[n_left : n_left + n_pair]
+            right = base_params[n_left + n_pair :]
+            pair_reference = _transfer_pair_reference_params(
+                prev_pair_reference,
+                previous_parameterization.pair_indices,
+                self.pair_indices,
+                old_for_new,
+                phases,
+            )
+            return np.concatenate([left, pair, pair_reference, right])
+
         base_params = self._base.transfer_parameters_from(
             previous_parameters,
             previous_parameterization=previous_parameterization,
             old_for_new=old_for_new,
             phases=phases,
-            orbital_overlap=orbital_overlap,
+            orbital_overlap=None,
             block_diagonal=block_diagonal,
         )
         return self.parameters_from_igcr2(base_params, parameterization=self._base)
