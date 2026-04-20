@@ -6,7 +6,6 @@ from functools import cache
 from typing import Callable
 
 import numpy as np
-import scipy.linalg
 
 from xquces.basis import occ_rows
 from xquces.gcr.commutator_gcr2 import _diag2_features, _validate_pairs
@@ -63,38 +62,90 @@ def _doci_subspace_indices(
     )
 
 
-def _doci_generator_from_params(
+def _doci_dimension(
+    norb: int,
+    nelec: tuple[int, int],
+) -> int:
+    if nelec[0] != nelec[1]:
+        raise ValueError("DOCI middle block requires nalpha == nbeta")
+    return len(_doci_spatial_basis(norb, nelec[0]))
+
+
+def _canonicalize_real_state_vector(
+    state: np.ndarray,
+) -> np.ndarray:
+    state = np.asarray(state, dtype=np.float64)
+    if state.ndim != 1:
+        raise ValueError("state must be one-dimensional")
+    norm = float(np.linalg.norm(state))
+    if norm == 0.0:
+        raise ValueError("state must be nonzero")
+    out = state / norm
+    for value in out:
+        if abs(value) > 1e-14:
+            if value < 0.0:
+                out = -out
+            break
+    return out
+
+
+def _doci_state_vector_from_params(
     pair_reference_params: np.ndarray,
     norb: int,
     nelec: tuple[int, int],
 ) -> np.ndarray:
-    if nelec[0] != nelec[1]:
-        raise ValueError("DOCI middle block requires nalpha == nbeta")
-    nocc = nelec[0]
-    dim = len(_doci_spatial_basis(norb, nocc))
-    expected = dim * (dim - 1) // 2
+    dim = _doci_dimension(norb, nelec)
+    expected = dim - 1
     pair_reference_params = np.asarray(pair_reference_params, dtype=np.float64)
     if pair_reference_params.shape != (expected,):
         raise ValueError(
             f"pair_reference_params has wrong shape: expected ({expected},), got {pair_reference_params.shape}"
         )
-    generator = np.zeros((dim, dim), dtype=np.float64)
-    if expected == 0:
-        return generator
-    iu = np.triu_indices(dim, k=1)
-    generator[iu] = pair_reference_params
-    generator[(iu[1], iu[0])] = -pair_reference_params
-    return generator
+    if dim == 1:
+        return np.ones(1, dtype=np.float64)
+    amps = np.empty(dim, dtype=np.float64)
+    running = 1.0
+    for k, theta in enumerate(pair_reference_params):
+        amps[k] = running * np.cos(theta)
+        running *= np.sin(theta)
+    amps[-1] = running
+    return amps
 
 
-def _params_from_doci_generator(
-    generator: np.ndarray,
+def _params_from_doci_state_vector(
+    state: np.ndarray,
 ) -> np.ndarray:
-    generator = np.asarray(generator, dtype=np.float64)
-    if generator.ndim != 2 or generator.shape[0] != generator.shape[1]:
-        raise ValueError("generator must be square")
-    iu = np.triu_indices(generator.shape[0], k=1)
-    return np.asarray(generator[iu], dtype=np.float64)
+    state = _canonicalize_real_state_vector(state)
+    dim = state.size
+    if dim == 1:
+        return np.zeros(0, dtype=np.float64)
+    params = np.zeros(dim - 1, dtype=np.float64)
+    for k in range(dim - 2):
+        tail_norm = float(np.linalg.norm(state[k + 1 :]))
+        if abs(state[k]) < 1e-14 and tail_norm < 1e-14:
+            params[k] = 0.0
+        else:
+            params[k] = float(np.arctan2(tail_norm, state[k]))
+    params[-1] = float(np.arctan2(state[-1], state[-2]))
+    return params
+
+
+def _doci_unitary_from_state_vector(
+    state: np.ndarray,
+) -> np.ndarray:
+    target = _canonicalize_real_state_vector(state)
+    dim = target.size
+    unitary = np.eye(dim, dtype=np.complex128)
+    if dim == 1:
+        return unitary
+    e0 = np.zeros(dim, dtype=np.float64)
+    e0[0] = 1.0
+    diff = e0 - target
+    norm = float(np.linalg.norm(diff))
+    if norm < 1e-14:
+        return unitary
+    u = diff / norm
+    return unitary - 2.0 * np.outer(u, u).astype(np.complex128)
 
 
 def _doci_unitary_from_params(
@@ -102,8 +153,8 @@ def _doci_unitary_from_params(
     norb: int,
     nelec: tuple[int, int],
 ) -> np.ndarray:
-    generator = _doci_generator_from_params(pair_reference_params, norb, nelec)
-    return np.asarray(scipy.linalg.expm(generator), dtype=np.complex128)
+    state = _doci_state_vector_from_params(pair_reference_params, norb, nelec)
+    return _doci_unitary_from_state_vector(state)
 
 
 def apply_pair_reference_global(
@@ -124,29 +175,6 @@ def apply_pair_reference_global(
         unitary = _doci_unitary_from_params(pair_reference_params, norb, nelec)
     subvec = np.asarray(out[indices], dtype=np.complex128)
     out[indices] = unitary @ subvec
-    return out
-
-
-def _apply_pair_reference_global_batch(
-    batch: np.ndarray,
-    pair_reference_params: np.ndarray,
-    norb: int,
-    nelec: tuple[int, int],
-    pairs: tuple[tuple[int, int], ...],
-    unitary: np.ndarray | None = None,
-) -> np.ndarray:
-    del pairs
-    batch = np.asarray(batch, dtype=np.complex128)
-    if batch.ndim != 2:
-        raise ValueError("batch must be two-dimensional")
-    out = np.array(batch, dtype=np.complex128, copy=True)
-    indices = _doci_subspace_indices(norb, nelec)
-    if indices.size == 0 or out.shape[0] == 0:
-        return out
-    if unitary is None:
-        unitary = _doci_unitary_from_params(pair_reference_params, norb, nelec)
-    sub = np.asarray(out[:, indices], dtype=np.complex128)
-    out[:, indices] = sub @ unitary.T
     return out
 
 
@@ -178,13 +206,11 @@ def _transfer_pair_reference_params(
     current_for_old = np.empty_like(old_for_new)
     current_for_old[old_for_new] = np.arange(norb)
 
+    amps_old = _doci_state_vector_from_params(pair_reference_params, norb, nelec)
     basis_old = _doci_spatial_basis(norb, nelec[0])
     basis_new = _doci_spatial_basis(norb, nelec[0])
     basis_new_index = {occ: i for i, occ in enumerate(basis_new)}
-
-    generator_old = _doci_generator_from_params(pair_reference_params, norb, nelec)
-    dim = generator_old.shape[0]
-    transform = np.zeros((dim, dim), dtype=np.float64)
+    amps_new = np.zeros_like(amps_old)
 
     for i_old, occ_old in enumerate(basis_old):
         occ_new = tuple(sorted(int(current_for_old[p]) for p in occ_old))
@@ -196,12 +222,11 @@ def _transfer_pair_reference_params(
             abs(np.real(gamma)), 1.0, atol=1e-8
         ):
             raise ValueError(
-                "pair-reference transfer encountered non-real DOCI basis phase; this parameterization only supports real DOCI generators."
+                "pair-reference transfer encountered non-real DOCI basis phase; this parameterization only supports real DOCI states."
             )
-        transform[i_new, i_old] = float(np.real(gamma))
+        amps_new[i_new] = float(np.real(gamma)) * amps_old[i_old]
 
-    generator_new = transform @ generator_old @ transform.T
-    return _params_from_doci_generator(generator_new)
+    return _params_from_doci_state_vector(amps_new)
 
 
 @dataclass(frozen=True)
@@ -314,8 +339,7 @@ class GCR2PairReferenceParameterization:
 
     @property
     def n_pair_reference_params(self) -> int:
-        dim = len(_doci_spatial_basis(self.norb, self.nocc))
-        return dim * (dim - 1) // 2
+        return _doci_dimension(self.norb, (self.nocc, self.nocc)) - 1
 
     @property
     def n_pair_hop_params(self) -> int:

@@ -8,7 +8,6 @@ from xquces.basis import reshape_state
 from xquces.gcr.commutator_gcr2 import _diag2_features
 from xquces.gcr.pair_reference_gcr2 import (
     GCR2PairReferenceParameterization,
-    _apply_pair_reference_global_batch,
     _doci_unitary_from_params,
     apply_pair_reference_global,
 )
