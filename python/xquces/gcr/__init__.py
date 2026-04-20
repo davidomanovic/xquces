@@ -32,7 +32,7 @@ from xquces.gcr.bridge_gcr2 import (
 from xquces.gcr.pair_reference_gcr2 import (
     GCR2PairReferenceAnsatz,
     GCR2PairReferenceParameterization,
-    apply_pair_reference_product,
+    apply_pair_reference_global,
 )
 from xquces.gcr.igcr3 import IGCR3SpinRestrictedParameterization
 from xquces.gcr.igcr4 import IGCR4SpinRestrictedParameterization
