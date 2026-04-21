@@ -4,10 +4,12 @@ from xquces.states import (
     determinant_state,
     doci_amplitudes_from_parameters,
     doci_amplitudes_from_state,
+    doci_amplitudes_jacobian_from_parameters,
     doci_dimension,
     doci_params_from_state,
     doci_parameters_from_amplitudes,
     doci_state,
+    doci_state_jacobian,
     hartree_fock_state,
     linear_combination_state,
     open_shell_singlet_state,
@@ -15,6 +17,7 @@ from xquces.states import (
 from xquces.state_parameterization import (
     CompositeReferenceAnsatzParameterization,
     DOCIStateParameterization,
+    make_composite_reference_ansatz_jacobian,
 )
 from xquces.hamiltonians import MolecularHamiltonianLinearOperator
 from xquces.sqd import run_sqd_from_statevector
@@ -57,9 +60,11 @@ __all__ = [
     "doci_state",
     "doci_dimension",
     "doci_amplitudes_from_parameters",
+    "doci_amplitudes_jacobian_from_parameters",
     "doci_parameters_from_amplitudes",
     "doci_amplitudes_from_state",
     "doci_params_from_state",
+    "doci_state_jacobian",
     "apply_doci_unitary",
     "determinant_index",
     "determinant_state",
@@ -67,6 +72,7 @@ __all__ = [
     "open_shell_singlet_state",
     "DOCIStateParameterization",
     "CompositeReferenceAnsatzParameterization",
+    "make_composite_reference_ansatz_jacobian",
     "MolecularHamiltonianLinearOperator",
     "run_sqd_from_statevector",
     "GCRAnsatz",
