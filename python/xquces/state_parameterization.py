@@ -5,7 +5,8 @@ from typing import Callable
 
 import numpy as np
 
-from xquces.states import doci_dimension, doci_params_from_state, doci_state
+from xquces.gcr.restricted_jacobian_ext import make_restricted_gcr_jacobian
+from xquces.states import doci_dimension, doci_params_from_state, doci_state, doci_state_jacobian
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,12 @@ class DOCIStateParameterization:
         if params.shape != (self.n_params,):
             raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
         return doci_state(self.norb, self.nelec, params=params)
+
+    def state_jacobian_from_parameters(self, params: np.ndarray) -> np.ndarray:
+        params = np.asarray(params, dtype=np.float64)
+        if params.shape != (self.n_params,):
+            raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
+        return doci_state_jacobian(self.norb, self.nelec, params)
 
     def parameters_from_state(self, state: np.ndarray) -> np.ndarray:
         return doci_params_from_state(state, self.norb, self.nelec)
@@ -89,3 +96,44 @@ class CompositeReferenceAnsatzParameterization:
             return self.state_from_parameters(params)
 
         return func
+
+
+def make_composite_reference_ansatz_jacobian(
+    parameterization: CompositeReferenceAnsatzParameterization,
+) -> Callable[[np.ndarray], np.ndarray]:
+    reference_parameterization = parameterization.reference_parameterization
+    ansatz_parameterization = parameterization.ansatz_parameterization
+    nelec = tuple(parameterization.nelec)
+
+    if not hasattr(reference_parameterization, "state_jacobian_from_parameters"):
+        raise TypeError(
+            "reference_parameterization does not implement state_jacobian_from_parameters"
+        )
+
+    def jac(params: np.ndarray) -> np.ndarray:
+        params = np.asarray(params, dtype=np.float64)
+        if params.shape != (parameterization.n_params,):
+            raise ValueError(f"Expected {(parameterization.n_params,)}, got {params.shape}.")
+        reference_params, ansatz_params = parameterization.split_parameters(params)
+        reference_state = reference_parameterization.state_from_parameters(reference_params)
+        reference_jac = reference_parameterization.state_jacobian_from_parameters(reference_params)
+        ansatz = ansatz_parameterization.ansatz_from_parameters(ansatz_params)
+
+        if reference_jac.shape[1]:
+            ref_block = np.column_stack(
+                [
+                    ansatz.apply(reference_jac[:, k], nelec=nelec, copy=True)
+                    for k in range(reference_jac.shape[1])
+                ]
+            )
+        else:
+            ref_block = np.zeros((reference_state.size, 0), dtype=np.complex128)
+
+        ansatz_block = make_restricted_gcr_jacobian(
+            ansatz_parameterization,
+            reference_state,
+            nelec,
+        )(ansatz_params)
+        return np.hstack([ref_block, ansatz_block])
+
+    return jac
