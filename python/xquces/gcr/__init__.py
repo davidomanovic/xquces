@@ -34,6 +34,14 @@ from xquces.gcr.doci_reference_gcr2 import (
     GCR2DOCIReferenceParameterization,
     apply_doci_reference_global,
 )
+from xquces.gcr.doci_reference_gcr3 import (
+    GCR3DOCIReferenceAnsatz,
+    GCR3DOCIReferenceParameterization,
+)
+from xquces.gcr.doci_reference_gcr4 import (
+    GCR4DOCIReferenceAnsatz,
+    GCR4DOCIReferenceParameterization,
+)
 from xquces.gcr.igcr3 import IGCR3SpinRestrictedParameterization
 from xquces.gcr.igcr4 import IGCR4SpinRestrictedParameterization
 from xquces.gcr.restricted_jacobian_ext import make_restricted_gcr_jacobian
@@ -69,6 +77,10 @@ __all__ = [
     "GCR2UntiedSplitBridgeParameterization",
     "GCR2DOCIReferenceAnsatz",
     "GCR2DOCIReferenceParameterization",
+    "GCR3DOCIReferenceAnsatz",
+    "GCR3DOCIReferenceParameterization",
+    "GCR4DOCIReferenceAnsatz",
+    "GCR4DOCIReferenceParameterization",
     "apply_doci_reference_global",
     "apply_gcr2_pairhop_product_middle",
     "gcr2_pairhop_middle_generator",
