@@ -166,6 +166,34 @@ def doci_amplitudes_from_parameters(
     return amps
 
 
+def doci_amplitudes_jacobian_from_parameters(
+    norb: int,
+    nelec: tuple[int, int],
+    params: np.ndarray,
+) -> np.ndarray:
+    dim = doci_dimension(norb, nelec)
+    expected = dim - 1
+    params = np.asarray(params, dtype=np.float64)
+    if params.shape != (expected,):
+        raise ValueError(f"Expected {(expected,)}, got {params.shape}.")
+    jac = np.zeros((dim, expected), dtype=np.float64)
+    if dim == 1:
+        return jac
+    s = np.sin(params)
+    c = np.cos(params)
+    prefix = np.ones(dim, dtype=np.float64)
+    for k in range(1, dim):
+        prefix[k] = prefix[k - 1] * s[k - 1]
+    for m in range(expected):
+        jac[m, m] = -prefix[m] * s[m]
+        tail = prefix[m] * c[m]
+        for k in range(m + 1, expected):
+            jac[k, m] = tail * c[k]
+            tail *= s[k]
+        jac[dim - 1, m] = tail
+    return jac
+
+
 def doci_parameters_from_amplitudes(amplitudes: np.ndarray) -> np.ndarray:
     state = _canonicalize_real_amplitudes(amplitudes)
     dim = state.size
@@ -231,6 +259,18 @@ def doci_state(
             raise ValueError(f"Expected {(expected,)}, got {amps.shape}.")
     vec[indices] = amps
     return vec
+
+
+def doci_state_jacobian(
+    norb: int,
+    nelec: tuple[int, int],
+    params: np.ndarray,
+) -> np.ndarray:
+    amp_jac = doci_amplitudes_jacobian_from_parameters(norb, nelec, params)
+    dim_a, dim_b = sector_shape(norb, nelec)
+    out = np.zeros((dim_a * dim_b, amp_jac.shape[1]), dtype=np.complex128)
+    out[_doci_subspace_indices(norb, nelec), :] = amp_jac
+    return out
 
 
 def _doci_unitary_from_amplitudes(amplitudes: np.ndarray) -> np.ndarray:
