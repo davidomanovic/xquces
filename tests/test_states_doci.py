@@ -5,6 +5,7 @@ from xquces.states import (
     doci_dimension,
     doci_params_from_state,
     doci_state,
+    doci_state_jacobian,
     hartree_fock_state,
 )
 
@@ -33,3 +34,19 @@ def test_apply_doci_unitary_matches_target_state_from_hf():
     out = apply_doci_unitary(hf, norb, nelec, params=params)
     target = doci_state(norb, nelec, params=params)
     assert np.allclose(out, target)
+
+
+def test_doci_state_jacobian_matches_finite_difference():
+    norb = 4
+    nelec = (2, 2)
+    params = np.linspace(0.2, 0.6, doci_dimension(norb, nelec) - 1)
+    jac = doci_state_jacobian(norb, nelec, params)
+    eps = 1e-7
+    for k in range(params.size):
+        step = np.zeros_like(params)
+        step[k] = eps
+        fd = (
+            doci_state(norb, nelec, params=params + step)
+            - doci_state(norb, nelec, params=params - step)
+        ) / (2 * eps)
+        assert np.allclose(jac[:, k], fd, atol=1e-6, rtol=1e-6)
