@@ -9,12 +9,13 @@ from xquces.gcr.doci_reference_gcr2 import (
     _transfer_doci_reference_params,
     apply_doci_reference_global,
 )
+from xquces.gcr.igcr2 import orbital_relabeling_from_overlap
 from xquces.gcr.igcr3 import (
     IGCR3Ansatz,
     IGCR3SpinRestrictedParameterization,
     IGCR3SpinRestrictedSpec,
-    _default_omega_indices,
     _default_pair_indices,
+    _default_triple_indices,
 )
 from xquces.orbitals import apply_orbital_rotation
 from xquces.states import doci_dimension
@@ -147,7 +148,7 @@ class GCR3DOCIReferenceParameterization:
             double_params=np.zeros(self.norb, dtype=np.float64),
             pair_values=np.zeros(len(_default_pair_indices(self.norb)), dtype=np.float64),
             tau=np.zeros((self.norb, self.norb), dtype=np.float64),
-            omega_values=np.zeros(len(_default_omega_indices(self.norb)), dtype=np.float64),
+            omega_values=np.zeros(len(_default_triple_indices(self.norb)), dtype=np.float64),
         )
 
     def _identity_orbital_rotation(self) -> np.ndarray:
@@ -260,7 +261,7 @@ class GCR3DOCIReferenceParameterization:
         if orbital_overlap is not None:
             if old_for_new is not None or phases is not None:
                 raise ValueError("Pass either orbital_overlap or explicit relabeling, not both.")
-            old_for_new, phases = self._base.transfer_parameters_from.__globals__["orbital_relabeling_from_overlap"](
+            old_for_new, phases = orbital_relabeling_from_overlap(
                 orbital_overlap,
                 nocc=self.nocc,
                 block_diagonal=block_diagonal,
