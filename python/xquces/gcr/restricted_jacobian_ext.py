@@ -10,23 +10,24 @@ from xquces.gcr.doci_reference_gcr2 import (
     _doci_unitary_from_params,
     apply_doci_reference_global,
 )
-from xquces.gcr.commutator_gcr2 import _diag2_features
+from xquces.gcr.doci_reference_gcr3 import GCR3DOCIReferenceParameterization
+from xquces.gcr.doci_reference_gcr4 import GCR4DOCIReferenceParameterization
 from xquces.gcr.restricted_jacobian import (
     _apply_batch_transform,
     _batch_row_and_col,
+    _diag_feature_matrix,
     _generator_batch_from_kappa,
     _left_chart_basis,
     _left_chart_kappa,
     _one_body_batch_to_sector,
     _one_body_tensor,
-    _public_to_native_matrix,
     _sector_representation,
     make_restricted_gcr_jacobian as _base_make_restricted_gcr_jacobian,
 )
 
 
 def make_doci_reference_gcr_jacobian(
-    parameterization: GCR2DOCIReferenceParameterization,
+    parameterization,
     reference_vec: np.ndarray,
     nelec: tuple[int, int],
 ) -> Callable[[np.ndarray], np.ndarray]:
@@ -38,14 +39,12 @@ def make_doci_reference_gcr_jacobian(
     tensor_a = _one_body_tensor(norb, nelec[0])
     tensor_b = _one_body_tensor(norb, nelec[1])
     reference_vec = np.asarray(reference_vec, dtype=np.complex128)
-    diag_features = _diag2_features(norb, nelec, parameterization.pair_indices)
-    transform = _public_to_native_matrix(parameterization)
+    diag_features = _diag_feature_matrix(parameterization._base, nelec)
 
     def jac(params: np.ndarray) -> np.ndarray:
         params = np.asarray(params, dtype=np.float64)
         if params.shape != (parameterization.n_params,):
             raise ValueError(f"Expected {(parameterization.n_params,)}, got {params.shape}.")
-        native = np.asarray(params, dtype=np.float64)
 
         n_left = parameterization.n_left_orbital_rotation_params
         n_diag = parameterization.n_diag_params
@@ -53,10 +52,10 @@ def make_doci_reference_gcr_jacobian(
         middle_start = parameterization._right_orbital_rotation_start
         n_middle = parameterization.n_middle_orbital_rotation_params
 
-        left_params = native[:n_left]
-        diag_params = native[n_left : n_left + n_diag]
-        doci_params = native[n_left + n_diag : middle_start]
-        middle_params = native[middle_start : middle_start + n_middle]
+        left_params = params[:n_left]
+        diag_params = params[n_left : n_left + n_diag]
+        doci_params = params[n_left + n_diag : middle_start]
+        middle_params = params[middle_start : middle_start + n_middle]
 
         u_left = left_chart.unitary_from_parameters(left_params, norb)
         u_middle = middle_chart.unitary_from_parameters(middle_params, norb)
@@ -147,19 +146,21 @@ def make_doci_reference_gcr_jacobian(
             blocks.append(d_state.reshape(n_middle, dim_a * dim_b).T)
 
         if blocks:
-            out = np.hstack(blocks)
-        else:
-            out = np.zeros((dim_a * dim_b, 0), dtype=np.complex128)
-
-        if transform is not None:
-            out = out @ transform
-        return out
+            return np.hstack(blocks)
+        return np.zeros((dim_a * dim_b, 0), dtype=np.complex128)
 
     return jac
 
 
 def make_restricted_gcr_jacobian(parameterization, reference_vec: np.ndarray, nelec: tuple[int, int]):
-    if isinstance(parameterization, GCR2DOCIReferenceParameterization):
+    if isinstance(
+        parameterization,
+        (
+            GCR2DOCIReferenceParameterization,
+            GCR3DOCIReferenceParameterization,
+            GCR4DOCIReferenceParameterization,
+        ),
+    ):
         return make_doci_reference_gcr_jacobian(parameterization, reference_vec, nelec)
     return _base_make_restricted_gcr_jacobian(parameterization, reference_vec, nelec)
 
