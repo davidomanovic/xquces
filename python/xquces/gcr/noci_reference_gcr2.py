@@ -73,6 +73,15 @@ def _real_coefficients_parameters_from_coefficients(
     return params
 
 
+def _phase_fixed_vector(vec: np.ndarray) -> np.ndarray:
+    out = np.asarray(vec, dtype=np.complex128).copy()
+    nz = np.flatnonzero(np.abs(out) > 1e-14)
+    if nz.size:
+        phase = np.exp(-1j * np.angle(out[int(nz[0])]))
+        out *= phase
+    return out
+
+
 @dataclass(frozen=True)
 class GCR2NOCIReferenceAnsatz:
     diag_params: np.ndarray
@@ -201,6 +210,14 @@ class GCR2NOCIReferenceParameterization:
         return self.n_reference_orbital_rotation_params
 
     @property
+    def n_active_params(self) -> int:
+        return (
+            self.n_left_orbital_rotation_params
+            + self.n_diag_params
+            + self.n_reference_orbital_rotation_params
+        )
+
+    @property
     def n_params(self) -> int:
         return (
             self.n_left_orbital_rotation_params
@@ -239,10 +256,7 @@ class GCR2NOCIReferenceParameterization:
         coeff = params[idx : idx + n]
         idx += n
         n = self.n_reference_orbital_rotation_params_per_reference
-        references = np.asarray(
-            params[idx:],
-            dtype=np.float64,
-        ).reshape(self.n_references, n)
+        references = np.asarray(params[idx:], dtype=np.float64).reshape(self.n_references, n)
         return left, diag, coeff, references
 
     def combine_parameters(
@@ -271,8 +285,40 @@ class GCR2NOCIReferenceParameterization:
                 f"Expected {(self.n_reference_coeff_params,)}, got {coeff.shape}."
             )
         if refs.shape != expected_refs:
-            raise ValueError(f"Expected {expected_refs}, got {refs.shape}.")
+            raise ValueError(f"Expected {expectedRefs}, got {refs.shape}.")
         return np.concatenate([left, diag, coeff, refs.reshape(-1)])
+
+    def split_active_parameters(
+        self,
+        params: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        params = np.asarray(params, dtype=np.float64)
+        if params.shape != (self.n_active_params,):
+            raise ValueError(f"Expected {(self.n_active_params,)}, got {params.shape}.")
+        idx = 0
+        n = self.n_left_orbital_rotation_params
+        left = params[idx : idx + n]
+        idx += n
+        n = self.n_diag_params
+        diag = params[idx : idx + n]
+        idx += n
+        n = self.n_reference_orbital_rotation_params_per_reference
+        references = np.asarray(params[idx:], dtype=np.float64).reshape(self.n_references, n)
+        return left, diag, references
+
+    def active_parameters_from_parameters(self, params: np.ndarray) -> np.ndarray:
+        left, diag, _, references = self.split_parameters(params)
+        return np.concatenate([left, diag, references.reshape(-1)])
+
+    def parameters_from_active_parameters(
+        self,
+        active_parameters: np.ndarray,
+        reference_coeff_params: np.ndarray | None = None,
+    ) -> np.ndarray:
+        left, diag, references = self.split_active_parameters(active_parameters)
+        if reference_coeff_params is None:
+            reference_coeff_params = np.zeros(self.n_reference_coeff_params, dtype=np.float64)
+        return self.combine_parameters(left, diag, reference_coeff_params, references)
 
     def _base_params_from_split(
         self,
@@ -302,8 +348,11 @@ class GCR2NOCIReferenceParameterization:
             dtype=np.complex128,
         )
 
-    def ansatz_from_parameters(self, params: np.ndarray) -> GCR2NOCIReferenceAnsatz:
-        left, diag, coeff_params, reference_params = self.split_parameters(params)
+    def _shared_left_and_diag_from_parameters(
+        self,
+        params: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        left, diag, _, reference_params = self.split_parameters(params)
         left_dummy = self._base.ansatz_from_parameters(
             self._base_params_from_split(
                 left,
@@ -316,6 +365,157 @@ class GCR2NOCIReferenceParameterization:
             [diag_matrix[p, q] for p, q in self._interaction_pairs],
             dtype=np.float64,
         )
+        return np.asarray(left_dummy.left, dtype=np.complex128), diag_values, reference_params
+
+    def basis_states_from_parameters(
+        self,
+        params: np.ndarray,
+        reference_vec: np.ndarray,
+        nelec: tuple[int, int],
+    ) -> np.ndarray:
+        reference_vec = np.asarray(reference_vec, dtype=np.complex128)
+        left, diag_values, reference_params = self._shared_left_and_diag_from_parameters(params)
+        phases = _diag2_features(self.norb, nelec, self._interaction_pairs) @ diag_values
+        phase_vector = np.exp(1j * phases)
+        out = np.empty((reference_vec.size, self.n_references), dtype=np.complex128)
+        for k in range(self.n_references):
+            right = self._reference_unitary_from_params(reference_params[k])
+            branch = apply_orbital_rotation(
+                reference_vec,
+                right,
+                self.norb,
+                nelec,
+                copy=True,
+            )
+            branch *= phase_vector
+            out[:, k] = apply_orbital_rotation(
+                branch,
+                left,
+                self.norb,
+                nelec,
+                copy=False,
+            )
+        return out
+
+    def subspace_matrices_from_parameters(
+        self,
+        params: np.ndarray,
+        reference_vec: np.ndarray,
+        nelec: tuple[int, int],
+        hamiltonian,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        basis = self.basis_states_from_parameters(params, reference_vec, nelec)
+        h_basis = np.column_stack([hamiltonian @ basis[:, k] for k in range(basis.shape[1])])
+        s_matrix = basis.conj().T @ basis
+        h_matrix = basis.conj().T @ h_basis
+        s_matrix = 0.5 * (s_matrix + s_matrix.conj().T)
+        h_matrix = 0.5 * (h_matrix + h_matrix.conj().T)
+        return basis, h_matrix, s_matrix
+
+    def solve_subspace(
+        self,
+        params: np.ndarray,
+        reference_vec: np.ndarray,
+        nelec: tuple[int, int],
+        hamiltonian,
+        *,
+        rtol: float = 1e-10,
+        atol: float = 1e-12,
+    ) -> dict[str, np.ndarray | float | int]:
+        basis, h_matrix, s_matrix = self.subspace_matrices_from_parameters(
+            params,
+            reference_vec,
+            nelec,
+            hamiltonian,
+        )
+        s_evals, s_evecs = np.linalg.eigh(s_matrix)
+        s_evals = np.real(s_evals)
+        lam_max = max(float(s_evals[-1]), 0.0) if s_evals.size else 0.0
+        cutoff = max(float(atol), float(rtol) * lam_max)
+        keep = s_evals > cutoff
+        if not np.any(keep):
+            keep[np.argmax(s_evals)] = True
+        active_evals = s_evals[keep]
+        x = s_evecs[:, keep] / np.sqrt(active_evals)[np.newaxis, :]
+        h_orth = x.conj().T @ h_matrix @ x
+        h_orth = 0.5 * (h_orth + h_orth.conj().T)
+        evals, evecs = np.linalg.eigh(h_orth)
+        energy = float(np.real(evals[0]))
+        coeffs = x @ evecs[:, 0]
+        coeffs = _phase_fixed_vector(coeffs)
+        state = basis @ coeffs
+        norm = float(np.linalg.norm(state))
+        if norm == 0.0:
+            raise ValueError("subspace eigenstate has zero norm")
+        coeffs = coeffs / norm
+        state = state / norm
+        smallest_kept = float(active_evals[0])
+        condition = lam_max / max(smallest_kept, cutoff) if lam_max > 0.0 else 1.0
+        return {
+            "energy": energy,
+            "state": state,
+            "coefficients": coeffs,
+            "basis_states": basis,
+            "h_matrix": h_matrix,
+            "s_matrix": s_matrix,
+            "cutoff": cutoff,
+            "subspace_condition": condition,
+            "active_modes": int(active_evals.size),
+            "dropped_modes": int(self.n_references - active_evals.size),
+        }
+
+    def energy_from_parameters(
+        self,
+        params: np.ndarray,
+        reference_vec: np.ndarray,
+        nelec: tuple[int, int],
+        hamiltonian,
+        *,
+        rtol: float = 1e-10,
+        atol: float = 1e-12,
+    ) -> float:
+        solved = self.solve_subspace(
+            params,
+            reference_vec,
+            nelec,
+            hamiltonian,
+            rtol=rtol,
+            atol=atol,
+        )
+        return float(solved["energy"])
+
+    def canonicalize_parameters(
+        self,
+        params: np.ndarray,
+        reference_vec: np.ndarray,
+        nelec: tuple[int, int],
+        hamiltonian,
+        *,
+        rtol: float = 1e-10,
+        atol: float = 1e-12,
+    ) -> np.ndarray:
+        params = np.asarray(params, dtype=np.float64)
+        left, diag, _, references = self.split_parameters(params)
+        solved = self.solve_subspace(
+            params,
+            reference_vec,
+            nelec,
+            hamiltonian,
+            rtol=rtol,
+            atol=atol,
+        )
+        coeffs = np.asarray(solved["coefficients"], dtype=np.complex128)
+        order = np.argsort(-np.abs(coeffs))
+        weights = np.abs(coeffs[order])
+        if float(np.linalg.norm(weights)) == 0.0:
+            weights = np.zeros(self.n_references, dtype=np.float64)
+            weights[0] = 1.0
+        coeff_params = self.reference_coeff_params_from_coefficients(weights)
+        return self.combine_parameters(left, diag, coeff_params, references[order])
+
+    def ansatz_from_parameters(self, params: np.ndarray) -> GCR2NOCIReferenceAnsatz:
+        left, diag_values, reference_params = self._shared_left_and_diag_from_parameters(params)
+        _, _, coeff_params, _ = self.split_parameters(params)
         coefficients = self.reference_coefficients_from_parameters(coeff_params)
         references = tuple(
             self._reference_unitary_from_params(reference_params[k])
@@ -324,7 +524,7 @@ class GCR2NOCIReferenceParameterization:
         return GCR2NOCIReferenceAnsatz(
             diag_params=diag_values,
             reference_coefficients=coefficients,
-            left=np.asarray(left_dummy.left, dtype=np.complex128),
+            left=left,
             references=references,
             norb=self.norb,
             nocc=self.nocc,
@@ -375,10 +575,7 @@ class GCR2NOCIReferenceParameterization:
             left = np.asarray(base_params[:n_left], dtype=np.float64)
             diag = np.asarray(base_params[n_left : n_left + n_diag], dtype=np.float64)
             coeff = self.reference_coeff_params_from_coefficients(
-                np.array(
-                    [1.0] + [0.0] * (self.n_references - 1),
-                    dtype=np.float64,
-                )
+                np.array([1.0] + [0.0] * (self.n_references - 1), dtype=np.float64)
             )
             refs = np.zeros(
                 (
