@@ -5,6 +5,7 @@ from functools import cache
 from typing import Callable
 
 import numpy as np
+import scipy.linalg
 
 from xquces.basis import occ_indicator_rows
 from xquces.gcr.commutator_gcr2 import _diag2_features, _validate_pairs
@@ -138,6 +139,15 @@ def _apply_spectator_controlled_rotation(
             copy=False,
         )
     return out
+
+
+def _principal_antihermitian_log(u: np.ndarray) -> np.ndarray:
+    kappa = scipy.linalg.logm(np.asarray(u, dtype=np.complex128))
+    return 0.5 * (kappa - kappa.conj().T)
+
+
+def _dominant_real_component(z: complex) -> float:
+    return float(np.real(z) if abs(np.real(z)) >= abs(np.imag(z)) else np.imag(z))
 
 
 @dataclass(frozen=True)
@@ -285,6 +295,34 @@ class GCR2SpectatorOrbitalParameterization:
     ) -> np.ndarray:
         return np.concatenate([left, pair, right]).astype(np.float64, copy=False)
 
+    def heuristic_spectator_params_from_ansatz(
+        self,
+        ansatz: IGCR2Ansatz,
+        spectator_scale: float = 0.05,
+    ) -> np.ndarray:
+        if not isinstance(ansatz, IGCR2Ansatz):
+            raise TypeError(type(ansatz).__name__)
+        if spectator_scale <= 0:
+            return np.zeros(self.n_spectator_params, dtype=np.float64)
+        pair = np.asarray(ansatz.diagonal.pair, dtype=np.float64)
+        kappa_left = _principal_antihermitian_log(ansatz.left)
+        kappa_right = _principal_antihermitian_log(ansatz.right)
+        kappa = 0.5 * (kappa_left + kappa_right)
+        raw = np.zeros(self.n_spectator_params, dtype=np.float64)
+        by_pair: dict[tuple[int, int], list[int]] = {}
+        for idx, (r, p, q) in enumerate(self._triples):
+            by_pair.setdefault((p, q), []).append(idx)
+            delta = float(pair[r, p] - pair[r, q])
+            amp = _dominant_real_component(kappa[p, q])
+            raw[idx] = delta * amp
+        for indices in by_pair.values():
+            values = raw[indices]
+            raw[indices] = values - float(np.mean(values))
+        max_abs = float(np.max(np.abs(raw))) if raw.size else 0.0
+        if max_abs <= 1e-14:
+            return np.zeros(self.n_spectator_params, dtype=np.float64)
+        return spectator_scale * raw / max_abs
+
     def ansatz_from_parameters(self, params: np.ndarray) -> GCR2SpectatorOrbitalAnsatz:
         left, pair, spectator, right = self._split(params)
         base_ansatz = self._base.ansatz_from_parameters(
@@ -312,6 +350,8 @@ class GCR2SpectatorOrbitalParameterization:
         self,
         params: np.ndarray,
         parameterization: IGCR2SpinRestrictedParameterization | None = None,
+        initialize_spectator: bool = True,
+        spectator_scale: float = 0.05,
     ) -> np.ndarray:
         parameterization = self._base if parameterization is None else parameterization
         if parameterization.norb != self.norb or parameterization.nocc != self.nocc:
@@ -323,30 +363,32 @@ class GCR2SpectatorOrbitalParameterization:
         pair_stop = pair_start + self.n_pair_params
         pair = base_params[pair_start:pair_stop]
         right = base_params[pair_stop:]
-        return np.concatenate(
-            [
-                left,
-                pair,
-                np.zeros(self.n_spectator_params, dtype=np.float64),
-                right,
-            ]
+        spectator = (
+            self.heuristic_spectator_params_from_ansatz(ansatz, spectator_scale)
+            if initialize_spectator
+            else np.zeros(self.n_spectator_params, dtype=np.float64)
         )
+        return np.concatenate([left, pair, spectator, right])
 
-    def parameters_from_ucj_ansatz(self, ansatz: UCJAnsatz) -> np.ndarray:
+    def parameters_from_ucj_ansatz(
+        self,
+        ansatz: UCJAnsatz,
+        initialize_spectator: bool = True,
+        spectator_scale: float = 0.05,
+    ) -> np.ndarray:
         base_params = self._base.parameters_from_ucj_ansatz(ansatz)
+        base_ansatz = self._base.ansatz_from_parameters(base_params)
         left = base_params[: self.n_left_orbital_rotation_params]
         pair_start = self.n_left_orbital_rotation_params
         pair_stop = pair_start + self.n_pair_params
         pair = base_params[pair_start:pair_stop]
         right = base_params[pair_stop:]
-        return np.concatenate(
-            [
-                left,
-                pair,
-                np.zeros(self.n_spectator_params, dtype=np.float64),
-                right,
-            ]
+        spectator = (
+            self.heuristic_spectator_params_from_ansatz(base_ansatz, spectator_scale)
+            if initialize_spectator
+            else np.zeros(self.n_spectator_params, dtype=np.float64)
         )
+        return np.concatenate([left, pair, spectator, right])
 
     def params_to_vec(
         self,
