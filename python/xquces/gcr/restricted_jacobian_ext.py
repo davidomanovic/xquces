@@ -261,18 +261,21 @@ def make_spectator_orbital_gcr_jacobian(
     diag_features = _diag_feature_matrix(base, nelec)
     base_transform = _public_to_native_matrix(base)
     triples = parameterization.triple_indices
+    spectator_transform = parameterization.spectator_transform
 
     n_left_public = parameterization.n_left_orbital_rotation_params
     n_diag_public = parameterization.n_pair_params
     n_spectator = parameterization.n_spectator_params
     n_right_public = parameterization.n_right_orbital_rotation_params
+    n_full_spectator = parameterization.n_full_spectator_terms
 
     def jac(params: np.ndarray) -> np.ndarray:
         params = np.asarray(params, dtype=np.float64)
         if params.shape != (parameterization.n_params,):
             raise ValueError(f"Expected {(parameterization.n_params,)}, got {params.shape}.")
 
-        left_public, _, spectator_params, right_public = parameterization._split(params)
+        left_public, _, spectator_reduced, right_public = parameterization._split(params)
+        spectator_full = parameterization.full_spectator_params_from_reduced(spectator_reduced)
         base_public = np.concatenate([left_public, params[n_left_public : n_left_public + n_diag_public], right_public])
         native = base._native_parameters_from_public(base_public)
 
@@ -305,7 +308,7 @@ def make_spectator_orbital_gcr_jacobian(
 
         before_middle = phase_half * rotated_right
         prefix = [before_middle.reshape(-1)]
-        for theta, (r, p, q) in zip(spectator_params, triples):
+        for theta, (r, p, q) in zip(spectator_full, triples):
             prefix.append(
                 _apply_spectator_controlled_rotation(
                     prefix[-1],
@@ -341,7 +344,7 @@ def make_spectator_orbital_gcr_jacobian(
                 first_half_vec = (0.5j * feature * before_middle).reshape(-1)
                 first_half_vec = _apply_spectator_sequence(
                     first_half_vec,
-                    spectator_params,
+                    spectator_full,
                     triples,
                     norb,
                     nelec,
@@ -368,7 +371,7 @@ def make_spectator_orbital_gcr_jacobian(
                 vec0 = (phase_half * d_rotated_right[j]).reshape(-1)
                 vec1 = _apply_spectator_sequence(
                     vec0,
-                    spectator_params,
+                    spectator_full,
                     triples,
                     norb,
                     nelec,
@@ -383,28 +386,32 @@ def make_spectator_orbital_gcr_jacobian(
         d_base_native = np.hstack(native_blocks)
         d_base_public = d_base_native if base_transform is None else d_base_native @ base_transform
 
-        spectator_cols = np.empty((dim, n_spectator), dtype=np.complex128)
-        for j, ((r, p, q), theta) in enumerate(zip(triples, spectator_params)):
-            d_mid = _apply_spectator_controlled_rotation_derivative(
-                prefix[j],
-                float(theta),
-                r,
-                p,
-                q,
-                norb,
-                nelec,
-            )
-            d_mid = _apply_spectator_sequence(
-                d_mid,
-                spectator_params,
-                triples,
-                norb,
-                nelec,
-                start=j + 1,
-            )
-            mat = phase_half * reshape_state(d_mid, norb, nelec)
-            total = rep_left_a @ mat @ rep_left_b.T
-            spectator_cols[:, j] = total.reshape(-1)
+        if n_full_spectator:
+            spectator_cols_full = np.empty((dim, n_full_spectator), dtype=np.complex128)
+            for j, ((r, p, q), theta) in enumerate(zip(triples, spectator_full)):
+                d_mid = _apply_spectator_controlled_rotation_derivative(
+                    prefix[j],
+                    float(theta),
+                    r,
+                    p,
+                    q,
+                    norb,
+                    nelec,
+                )
+                d_mid = _apply_spectator_sequence(
+                    d_mid,
+                    spectator_full,
+                    triples,
+                    norb,
+                    nelec,
+                    start=j + 1,
+                )
+                mat = phase_half * reshape_state(d_mid, norb, nelec)
+                total = rep_left_a @ mat @ rep_left_b.T
+                spectator_cols_full[:, j] = total.reshape(-1)
+            spectator_cols = spectator_cols_full @ spectator_transform
+        else:
+            spectator_cols = np.zeros((dim, n_spectator), dtype=np.complex128)
 
         left_public_block = d_base_public[:, :n_left_public]
         diag_public_block = d_base_public[:, n_left_public : n_left_public + n_diag_public]
