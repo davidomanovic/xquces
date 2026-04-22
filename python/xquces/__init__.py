@@ -24,6 +24,7 @@ from xquces.sqd import run_sqd_from_statevector
 from xquces.gcr import (
     GCR2DOCIReferenceParameterization,
     GCR2NOCIReferenceParameterization,
+    GCR2SpectatorOrbitalParameterization,
     GCRAnsatz,
     GCRSpinBalancedParameterization,
     GCRSpinRestrictedParameterization,
@@ -82,6 +83,7 @@ __all__ = [
     "GCRSpinRestrictedParameterization",
     "GCR2DOCIReferenceParameterization",
     "GCR2NOCIReferenceParameterization",
+    "GCR2SpectatorOrbitalParameterization",
     "gcr_from_ucj_ansatz",
     "AntiHermitianUnitaryChart",
     "antihermitian_from_parameters",
