@@ -34,6 +34,10 @@ from xquces.gcr.doci_reference_gcr2 import (
     GCR2DOCIReferenceParameterization,
     apply_doci_reference_global,
 )
+from xquces.gcr.noci_reference_gcr2 import (
+    GCR2NOCIReferenceAnsatz,
+    GCR2NOCIReferenceParameterization,
+)
 from xquces.gcr.doci_reference_gcr3 import (
     GCR3DOCIReferenceAnsatz,
     GCR3DOCIReferenceParameterization,
@@ -77,6 +81,8 @@ __all__ = [
     "GCR2UntiedSplitBridgeParameterization",
     "GCR2DOCIReferenceAnsatz",
     "GCR2DOCIReferenceParameterization",
+    "GCR2NOCIReferenceAnsatz",
+    "GCR2NOCIReferenceParameterization",
     "GCR3DOCIReferenceAnsatz",
     "GCR3DOCIReferenceParameterization",
     "GCR4DOCIReferenceAnsatz",
