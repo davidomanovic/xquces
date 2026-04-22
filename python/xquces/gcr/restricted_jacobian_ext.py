@@ -330,10 +330,34 @@ def make_spectator_orbital_gcr_jacobian(
 
         if n_left_native:
             gen_left = _generator_batch_from_kappa(kappa_left, left_basis)
+            gen_right_from_left = -np.matmul(
+                u_left.conj().T,
+                np.matmul(gen_left, u_left),
+            )
             left_a = _one_body_batch_to_sector(gen_left, tensor_a)
             left_b = _one_body_batch_to_sector(gen_left, tensor_b)
-            d_state = _batch_row_and_col(left_a, left_b, state)
-            native_blocks.append(d_state.reshape(n_left_native, dim).T)
+            right_a_from_left = _one_body_batch_to_sector(gen_right_from_left, tensor_a)
+            right_b_from_left = _one_body_batch_to_sector(gen_right_from_left, tensor_b)
+            d_rotated_right_left = _batch_row_and_col(
+                right_a_from_left,
+                right_b_from_left,
+                rotated_right,
+            )
+            direct_left = _batch_row_and_col(left_a, left_b, state)
+            left_cols = np.empty((dim, n_left_native), dtype=np.complex128)
+            for j in range(n_left_native):
+                vec0 = (phase_half * d_rotated_right_left[j]).reshape(-1)
+                vec1 = _apply_spectator_sequence(
+                    vec0,
+                    spectator_full,
+                    triples,
+                    norb,
+                    nelec,
+                )
+                mat = phase_half * reshape_state(vec1, norb, nelec)
+                propagated = rep_left_a @ mat @ rep_left_b.T
+                left_cols[:, j] = (direct_left[j] + propagated).reshape(-1)
+            native_blocks.append(left_cols)
         else:
             native_blocks.append(np.zeros((dim, 0), dtype=np.complex128))
 
