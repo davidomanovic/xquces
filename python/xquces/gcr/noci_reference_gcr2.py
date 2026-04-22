@@ -285,7 +285,7 @@ class GCR2NOCIReferenceParameterization:
                 f"Expected {(self.n_reference_coeff_params,)}, got {coeff.shape}."
             )
         if refs.shape != expected_refs:
-            raise ValueError(f"Expected {expectedRefs}, got {refs.shape}.")
+            raise ValueError(f"Expected {expected_refs}, got {refs.shape}.")
         return np.concatenate([left, diag, coeff, refs.reshape(-1)])
 
     def split_active_parameters(
