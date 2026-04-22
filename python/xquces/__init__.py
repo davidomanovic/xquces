@@ -23,6 +23,7 @@ from xquces.hamiltonians import MolecularHamiltonianLinearOperator
 from xquces.sqd import run_sqd_from_statevector
 from xquces.gcr import (
     GCR2DOCIReferenceParameterization,
+    GCR2NOCIReferenceParameterization,
     GCRAnsatz,
     GCRSpinBalancedParameterization,
     GCRSpinRestrictedParameterization,
@@ -80,6 +81,7 @@ __all__ = [
     "GCRSpinBalancedParameterization",
     "GCRSpinRestrictedParameterization",
     "GCR2DOCIReferenceParameterization",
+    "GCR2NOCIReferenceParameterization",
     "gcr_from_ucj_ansatz",
     "AntiHermitianUnitaryChart",
     "antihermitian_from_parameters",
