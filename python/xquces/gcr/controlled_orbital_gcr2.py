@@ -64,6 +64,17 @@ def _validate_triples(
     return tuple(out)
 
 
+def _helmert_basis(m: int) -> np.ndarray:
+    if m <= 1:
+        return np.zeros((m, 0), dtype=np.float64)
+    out = np.zeros((m, m - 1), dtype=np.float64)
+    for k in range(1, m):
+        norm = np.sqrt(k * (k + 1))
+        out[:k, k - 1] = 1.0 / norm
+        out[k, k - 1] = -float(k) / norm
+    return out
+
+
 @cache
 def _spectator_sector_indices(
     norb: int,
@@ -202,6 +213,7 @@ class GCR2SpectatorOrbitalParameterization:
     real_right_orbital_chart: bool = False
     _pairs: tuple[tuple[int, int], ...] = field(init=False, repr=False)
     _triples: tuple[tuple[int, int, int], ...] = field(init=False, repr=False)
+    _spectator_transform: np.ndarray = field(init=False, repr=False)
 
     def __post_init__(self):
         if self.base_parameterization is not None:
@@ -219,11 +231,26 @@ class GCR2SpectatorOrbitalParameterization:
                 object.__setattr__(self, "_pairs", pairs)
         else:
             object.__setattr__(self, "_pairs", _validate_pairs(self.pairs, self.norb))
-        object.__setattr__(
-            self,
-            "_triples",
-            _validate_triples(self.triples, self.norb, self._pairs),
+        triples = _validate_triples(self.triples, self.norb, self._pairs)
+        object.__setattr__(self, "_triples", triples)
+
+        transform_blocks = []
+        cursor = 0
+        for p, q in self._pairs:
+            group = [idx for idx, triple in enumerate(triples) if triple[1] == p and triple[2] == q]
+            basis = _helmert_basis(len(group))
+            if basis.shape[1] == 0:
+                continue
+            block = np.zeros((len(triples), basis.shape[1]), dtype=np.float64)
+            block[np.asarray(group, dtype=np.int64), :] = basis
+            transform_blocks.append(block)
+            cursor += basis.shape[1]
+        transform = (
+            np.hstack(transform_blocks)
+            if transform_blocks
+            else np.zeros((len(triples), 0), dtype=np.float64)
         )
+        object.__setattr__(self, "_spectator_transform", transform)
 
     @property
     def pair_indices(self) -> tuple[tuple[int, int], ...]:
@@ -232,6 +259,10 @@ class GCR2SpectatorOrbitalParameterization:
     @property
     def triple_indices(self) -> tuple[tuple[int, int, int], ...]:
         return self._triples
+
+    @property
+    def spectator_transform(self) -> np.ndarray:
+        return self._spectator_transform
 
     @property
     def _base(self) -> IGCR2SpinRestrictedParameterization:
@@ -254,8 +285,12 @@ class GCR2SpectatorOrbitalParameterization:
         return len(self._pairs)
 
     @property
-    def n_spectator_params(self) -> int:
+    def n_full_spectator_terms(self) -> int:
         return len(self._triples)
+
+    @property
+    def n_spectator_params(self) -> int:
+        return self._spectator_transform.shape[1]
 
     @property
     def n_right_orbital_rotation_params(self) -> int:
@@ -269,6 +304,18 @@ class GCR2SpectatorOrbitalParameterization:
             + self.n_spectator_params
             + self.n_right_orbital_rotation_params
         )
+
+    def full_spectator_params_from_reduced(self, params: np.ndarray) -> np.ndarray:
+        params = np.asarray(params, dtype=np.float64)
+        if params.shape != (self.n_spectator_params,):
+            raise ValueError(f"Expected {(self.n_spectator_params,)}, got {params.shape}.")
+        return self._spectator_transform @ params
+
+    def reduced_spectator_params_from_full(self, params: np.ndarray) -> np.ndarray:
+        params = np.asarray(params, dtype=np.float64)
+        if params.shape != (self.n_full_spectator_terms,):
+            raise ValueError(f"Expected {(self.n_full_spectator_terms,)}, got {params.shape}.")
+        return self._spectator_transform.T @ params
 
     def _split(self, params: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         params = np.asarray(params, dtype=np.float64)
@@ -298,26 +345,27 @@ class GCR2SpectatorOrbitalParameterization:
     def heuristic_spectator_params_from_ansatz(
         self,
         ansatz: IGCR2Ansatz,
-        spectator_scale: float = 0.05,
+        spectator_scale: float = 0.01,
     ) -> np.ndarray:
         if not isinstance(ansatz, IGCR2Ansatz):
             raise TypeError(type(ansatz).__name__)
-        if spectator_scale <= 0:
+        if spectator_scale <= 0 or self.n_spectator_params == 0:
             return np.zeros(self.n_spectator_params, dtype=np.float64)
         pair = np.asarray(ansatz.diagonal.pair, dtype=np.float64)
         kappa_left = _principal_antihermitian_log(ansatz.left)
         kappa_right = _principal_antihermitian_log(ansatz.right)
         kappa = 0.5 * (kappa_left + kappa_right)
-        raw = np.zeros(self.n_spectator_params, dtype=np.float64)
+        raw_full = np.zeros(self.n_full_spectator_terms, dtype=np.float64)
         by_pair: dict[tuple[int, int], list[int]] = {}
         for idx, (r, p, q) in enumerate(self._triples):
             by_pair.setdefault((p, q), []).append(idx)
             delta = float(pair[r, p] - pair[r, q])
             amp = _dominant_real_component(kappa[p, q])
-            raw[idx] = delta * amp
+            raw_full[idx] = delta * amp
         for indices in by_pair.values():
-            values = raw[indices]
-            raw[indices] = values - float(np.mean(values))
+            values = raw_full[indices]
+            raw_full[indices] = values - float(np.mean(values))
+        raw = self.reduced_spectator_params_from_full(raw_full)
         max_abs = float(np.max(np.abs(raw))) if raw.size else 0.0
         if max_abs <= 1e-14:
             return np.zeros(self.n_spectator_params, dtype=np.float64)
@@ -335,9 +383,10 @@ class GCR2SpectatorOrbitalParameterization:
             [pair_matrix[p, q] for p, q in self._pairs],
             dtype=np.float64,
         )
+        spectator_full = self.full_spectator_params_from_reduced(np.asarray(spectator, dtype=np.float64))
         return GCR2SpectatorOrbitalAnsatz(
             pair_params=pair_values,
-            spectator_params=np.asarray(spectator, dtype=np.float64),
+            spectator_params=spectator_full,
             left=np.asarray(base_ansatz.left, dtype=np.complex128),
             right=np.asarray(base_ansatz.right, dtype=np.complex128),
             norb=self.norb,
@@ -351,7 +400,7 @@ class GCR2SpectatorOrbitalParameterization:
         params: np.ndarray,
         parameterization: IGCR2SpinRestrictedParameterization | None = None,
         initialize_spectator: bool = True,
-        spectator_scale: float = 0.05,
+        spectator_scale: float = 0.01,
     ) -> np.ndarray:
         parameterization = self._base if parameterization is None else parameterization
         if parameterization.norb != self.norb or parameterization.nocc != self.nocc:
@@ -374,7 +423,7 @@ class GCR2SpectatorOrbitalParameterization:
         self,
         ansatz: UCJAnsatz,
         initialize_spectator: bool = True,
-        spectator_scale: float = 0.05,
+        spectator_scale: float = 0.01,
     ) -> np.ndarray:
         base_params = self._base.parameters_from_ucj_ansatz(ansatz)
         base_ansatz = self._base.ansatz_from_parameters(base_params)
