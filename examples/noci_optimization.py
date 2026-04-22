@@ -11,7 +11,6 @@ import ffsim
 import numpy as np
 import pyscf
 import pyscf.mcscf
-import xquces
 from scipy.optimize import minimize
 from scipy.sparse.linalg import eigsh
 from threadpoolctl import threadpool_limits
@@ -54,6 +53,8 @@ print_every = 1
 dense_threshold = 4096
 n_fci_roots = 1
 s2_tol = 1e-4
+subspace_rtol = 1e-10
+subspace_atol = 1e-12
 output = Path(f"output/{molecule}_{basis}_gcr2_noci_reference.csv")
 
 
@@ -82,11 +83,7 @@ def run_casscf_singlet(scf, norb: int, nelec: tuple[int, int]):
     return mc
 
 
-def exact_singlet_root(
-    hamiltonian,
-    norb: int,
-    nelec: tuple[int, int],
-) -> tuple[float, float, np.ndarray]:
+def exact_singlet_root(hamiltonian, norb: int, nelec: tuple[int, int]) -> tuple[float, float, np.ndarray]:
     dim = hamiltonian.shape[0]
     if dim <= dense_threshold:
         dense = build_dense_hamiltonian(hamiltonian, n_workers=dense_h_workers)
@@ -129,9 +126,7 @@ def align_active_orbitals_to_previous(casscf, previous, mol) -> np.ndarray:
     )
     current_for_old = np.empty_like(old_for_new)
     current_for_old[old_for_new] = np.arange(old_for_new.size)
-    aligned_active_mo = (
-        active_mo[:, current_for_old] * np.conj(phases[current_for_old])[np.newaxis, :]
-    )
+    aligned_active_mo = active_mo[:, current_for_old] * np.conj(phases[current_for_old])[np.newaxis, :]
 
     mo_coeff = np.array(casscf.mo_coeff, copy=True)
     start_idx = casscf.ncore
@@ -212,14 +207,26 @@ def continuation_seed(param, previous, mol, active_mo, fallback):
     return np.asarray(previous_params, dtype=np.float64).copy()
 
 
+def solve_noci_state(param, x, phi0, nelec, hamiltonian):
+    return param.solve_subspace(
+        x,
+        phi0,
+        nelec,
+        hamiltonian,
+        rtol=subspace_rtol,
+        atol=subspace_atol,
+    )
+
+
 def state_energy(param, x, phi0, nelec, hamiltonian) -> float:
-    psi = param.ansatz_from_parameters(x).apply(phi0, nelec=nelec, copy=True)
-    return float(np.real(np.vdot(psi, hamiltonian @ psi)))
+    solved = solve_noci_state(param, x, phi0, nelec, hamiltonian)
+    return float(solved["energy"])
 
 
 def evaluate_state(param, x, phi0, nelec, norb, hamiltonian, psi_fci, e_fci):
-    psi = param.ansatz_from_parameters(x).apply(phi0, nelec=nelec, copy=True)
-    energy = float(np.real(np.vdot(psi, hamiltonian @ psi)))
+    solved = solve_noci_state(param, x, phi0, nelec, hamiltonian)
+    psi = np.asarray(solved["state"], dtype=np.complex128)
+    energy = float(solved["energy"])
     s2 = spin_square(psi, norb, nelec)
     overlap2 = float(abs(np.vdot(psi_fci, psi)) ** 2)
     return {
@@ -227,6 +234,9 @@ def evaluate_state(param, x, phi0, nelec, norb, hamiltonian, psi_fci, e_fci):
         "s2": s2,
         "overlap2": overlap2,
         "gap_mHa": 1000.0 * (energy - e_fci),
+        "subspace_condition": float(solved["subspace_condition"]),
+        "active_modes": int(solved["active_modes"]),
+        "dropped_modes": int(solved["dropped_modes"]),
     }
 
 
@@ -239,47 +249,61 @@ def optimize_gcr2_noci_reference(
     trace: Path,
     r: float,
 ):
-    trace_header = [
-        "R",
-        "iter",
-        "energy",
-    ]
+    trace_header = ["R", "iter", "energy", "cond_S", "active_modes"]
 
     counter = {"value": 0}
+    _, _, frozen_coeff, _ = param.split_parameters(x0)
+    y0 = param.active_parameters_from_parameters(x0)
 
-    def fun(x: np.ndarray) -> float:
-        return state_energy(param, x, phi0, nelec, hamiltonian)
+    def full_params(y: np.ndarray) -> np.ndarray:
+        return param.parameters_from_active_parameters(y, reference_coeff_params=frozen_coeff)
 
-    def callback(xk: np.ndarray) -> None:
+    def fun(y: np.ndarray) -> float:
+        return state_energy(param, full_params(y), phi0, nelec, hamiltonian)
+
+    def callback(yk: np.ndarray) -> None:
         counter["value"] += 1
         if counter["value"] % print_every:
             return
-        energy = fun(xk)
+        x = full_params(yk)
+        solved = solve_noci_state(param, x, phi0, nelec, hamiltonian)
+        energy = float(solved["energy"])
+        cond_s = float(solved["subspace_condition"])
+        active_modes = int(solved["active_modes"])
         append_row_csv(
             trace,
             {
                 "R": f"{r:.8f}",
                 "iter": str(counter["value"]),
                 "energy": f"{energy:.14f}",
+                "cond_S": f"{cond_s:.12e}",
+                "active_modes": str(active_modes),
             },
             trace_header,
         )
         print(
-            f"[R={r:.3f}] Iter {counter['value']}: E = {energy:.12f}",
+            f"[R={r:.3f}] Iter {counter['value']}: E = {energy:.12f}, cond_S = {cond_s:.3e}, active_modes = {active_modes}",
             flush=True,
         )
 
-    return minimize(
+    result = minimize(
         fun,
-        x0=np.asarray(x0, dtype=np.float64),
+        x0=np.asarray(y0, dtype=np.float64),
         method="L-BFGS-B",
         callback=callback,
-        options={
-            "maxiter": maxiter,
-            "gtol": gtol,
-            "ftol": ftol,
-        },
+        options={"maxiter": maxiter, "gtol": gtol, "ftol": ftol},
     )
+    result.full_x = full_params(result.x)
+    result.x = param.canonicalize_parameters(
+        result.full_x,
+        phi0,
+        nelec,
+        hamiltonian,
+        rtol=subspace_rtol,
+        atol=subspace_atol,
+    )
+    result.fun = state_energy(param, result.x, phi0, nelec, hamiltonian)
+    return result
 
 
 def main() -> None:
@@ -291,17 +315,7 @@ def main() -> None:
     if trace.exists():
         trace.unlink()
 
-    header = [
-        "R",
-        "E_FCI",
-        "E_HF",
-        "E_CCSD",
-        "E_initial",
-        "E_opt",
-        "S2",
-        "overlap2",
-        "n_params",
-    ]
+    header = ["R", "E_FCI", "E_HF", "E_CCSD", "E_initial", "E_opt", "S2", "overlap2", "n_params"]
 
     print(",".join(header), flush=True)
 
@@ -340,12 +354,7 @@ def main() -> None:
             try:
                 casscf = run_casscf_singlet(scf, norb, nelec)
             except Exception:
-                casscf = run_casscf(
-                    scf,
-                    ncas=norb,
-                    nelecas=nelec,
-                    active_space=active_space,
-                )
+                casscf = run_casscf(scf, ncas=norb, nelecas=nelec, active_space=active_space)
 
             if previous_record is not None and use_orbital_alignment:
                 active_mo = align_active_orbitals_to_previous(casscf, previous_record, mol)
@@ -357,11 +366,7 @@ def main() -> None:
             e_fci, s2_fci, psi_fci = exact_singlet_root(h, norb, nelec)
             phi0 = ffsim.hartree_fock_state(norb, nelec)
 
-            ucj_seed = UCJRestrictedProjectedDFSeed(
-                t2=ccsd.t2,
-                t1=ccsd.t1,
-                n_reps=1,
-            ).build_ansatz()
+            ucj_seed = UCJRestrictedProjectedDFSeed(t2=ccsd.t2, t1=ccsd.t1, n_reps=1).build_ansatz()
 
             parameterization = GCR2NOCIReferenceParameterization(
                 norb=norb,
@@ -369,35 +374,37 @@ def main() -> None:
                 n_references=n_references,
                 real_reference_orbital_chart=True,
             )
-            x_seed = build_noci_initialized_seed(
-                parameterization,
-                ucj_seed,
-                ccsd.t1,
+            x_seed = build_noci_initialized_seed(parameterization, ucj_seed, ccsd.t1)
+            x_seed = parameterization.canonicalize_parameters(
+                x_seed,
+                phi0,
+                nelec,
+                h,
+                rtol=subspace_rtol,
+                atol=subspace_atol,
             )
 
             if previous_record is not None and use_continuation:
-                x0 = continuation_seed(
-                    parameterization,
-                    previous_record,
-                    mol,
-                    active_mo,
-                    x_seed,
-                )
+                x0 = continuation_seed(parameterization, previous_record, mol, active_mo, x_seed)
                 seed_label = "transferred"
             else:
                 x0 = np.asarray(x_seed, dtype=np.float64)
                 seed_label = "UCJ+NOCI"
+
+            x0 = parameterization.canonicalize_parameters(
+                x0,
+                phi0,
+                nelec,
+                h,
+                rtol=subspace_rtol,
+                atol=subspace_atol,
+            )
+
             print(
-                f"norb={norb} nelec={nelec} params={parameterization.n_params} "
-                f"(diag={parameterization.n_diag_params}, "
-                f"coeff={parameterization.n_reference_coeff_params}, "
-                f"refs={parameterization.n_reference_orbital_rotation_params})",
+                f"norb={norb} nelec={nelec} params={parameterization.n_params} (diag={parameterization.n_diag_params}, coeff={parameterization.n_reference_coeff_params}, refs={parameterization.n_reference_orbital_rotation_params})",
                 flush=True,
             )
-            print(
-                f"E(FCI singlet) = {e_fci:.12f}  <S^2>={s2_fci:.3e}",
-                flush=True,
-            )
+            print(f"E(FCI singlet) = {e_fci:.12f}  <S^2>={s2_fci:.3e}", flush=True)
             print(f"Using {seed_label} seed", flush=True)
 
             e_initial = state_energy(parameterization, x0, phi0, nelec, h)
@@ -413,16 +420,7 @@ def main() -> None:
                 float(r),
             )
 
-            diag = evaluate_state(
-                parameterization,
-                result.x,
-                phi0,
-                nelec,
-                norb,
-                h,
-                psi_fci,
-                e_fci,
-            )
+            diag = evaluate_state(parameterization, result.x, phi0, nelec, norb, h, psi_fci, e_fci)
             e_opt = diag["energy"]
 
             previous_record = (
@@ -433,10 +431,7 @@ def main() -> None:
             )
 
             print(
-                f"[R={r:.3f}] Done: E={e_opt:.12f}, "
-                f"gap={diag['gap_mHa']:+.3f} mHa, "
-                f"<S^2>={diag['s2']:.3e}, overlap2={diag['overlap2']:.6f}, "
-                f"nit={getattr(result, 'nit', '')}, success={getattr(result, 'success', False)}",
+                f"[R={r:.3f}] Done: E={e_opt:.12f}, gap={diag['gap_mHa']:+.3f} mHa, <S^2>={diag['s2']:.3e}, overlap2={diag['overlap2']:.6f}, cond_S={diag['subspace_condition']:.3e}, active_modes={diag['active_modes']}, nit={getattr(result, 'nit', '')}, success={getattr(result, 'success', False)}",
                 flush=True,
             )
 
