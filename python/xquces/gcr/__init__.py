@@ -29,6 +29,10 @@ from xquces.gcr.bridge_gcr2 import (
     GCR2UntiedSplitBridgeAnsatz,
     GCR2UntiedSplitBridgeParameterization,
 )
+from xquces.gcr.controlled_orbital_gcr2 import (
+    GCR2SpectatorOrbitalAnsatz,
+    GCR2SpectatorOrbitalParameterization,
+)
 from xquces.gcr.doci_reference_gcr2 import (
     GCR2DOCIReferenceAnsatz,
     GCR2DOCIReferenceParameterization,
@@ -79,6 +83,8 @@ __all__ = [
     "GCR2SplitBridgeParameterization",
     "GCR2UntiedSplitBridgeAnsatz",
     "GCR2UntiedSplitBridgeParameterization",
+    "GCR2SpectatorOrbitalAnsatz",
+    "GCR2SpectatorOrbitalParameterization",
     "GCR2DOCIReferenceAnsatz",
     "GCR2DOCIReferenceParameterization",
     "GCR2NOCIReferenceAnsatz",
