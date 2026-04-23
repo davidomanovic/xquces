@@ -16,7 +16,12 @@ from scipy.sparse.linalg import eigsh
 from threadpoolctl import threadpool_limits
 
 from xquces.gcr.igcr2 import orbital_relabeling_from_overlap
-from xquces.optimize import build_dense_hamiltonian, make_state_objective, minimize_linear_method
+from xquces.optimize import (
+    build_dense_hamiltonian,
+    make_state_objective,
+    minimize_linear_method,
+    minimize_metric_bfgs,
+)
 from xquces.ucj.init import UCJRestrictedProjectedDFSeed
 from xquces.utils import (
     active_hamiltonian_from_casscf,
@@ -44,6 +49,10 @@ n_frozen = 4
 maxiter = 10000
 gtol = 5e-6
 ftol = 1e-12
+metric_bfgs_gtol = 1e-10
+metric_damping = 1e-5
+metric_max_scale = 20.0
+optimizer = "metric_bfgs"
 scf_init_guess = "atom"
 use_continuation = True
 use_orbital_alignment = True
@@ -109,7 +118,7 @@ def exact_singlet_root(hamiltonian, norb: int, nelec: tuple[int, int]) -> tuple[
 
 
 def align_active_orbitals_to_previous(casscf, previous, mol) -> np.ndarray:
-    _, _, _, previous_mol, previous_mo = previous
+    _, _, previous_mol, previous_mo = previous
     active_mo = active_mo_coeff_from_casscf(casscf)
     overlap = orbital_overlap_between(previous_mol, previous_mo, mol, active_mo)
     old_for_new, phases = orbital_relabeling_from_overlap(
@@ -196,18 +205,56 @@ def optimize_composite(parameterization, x0: np.ndarray, hamiltonian, trace: Pat
     trace_header = ["R", "iter", "energy", "max_abs_grad"]
     params_to_vec = parameterization.params_to_vec()
     state_jacobian = xquces.make_composite_reference_ansatz_jacobian(parameterization)
-    fun, jac, cache = make_state_objective(params_to_vec, state_jacobian, hamiltonian)
+
+    if optimizer == "metric_bfgs":
+        fun, jac, cache = make_state_objective(params_to_vec, state_jacobian, hamiltonian)
+        counter = {"value": 0}
+
+        def callback(_intermediate_result):
+            counter["value"] += 1
+            if counter["value"] % 10:
+                return
+            grad = cache.get("g")
+            gmax = float(np.max(np.abs(grad))) if grad is not None else float("nan")
+            energy = float(cache.get("f", np.nan))
+            append_row_csv(
+                trace,
+                {
+                    "R": f"{r:.8f}",
+                    "iter": str(counter["value"]),
+                    "energy": f"{energy:.14f}",
+                    "max_abs_grad": f"{gmax:.12e}",
+                },
+                trace_header,
+            )
+            print(
+                f"[R={r:.3f}] Iter {counter['value']}: E = {energy:.12f}, gmax = {gmax:.2e}",
+                flush=True,
+            )
+
+        result = minimize_metric_bfgs(
+            fun,
+            jac,
+            np.asarray(x0, dtype=np.float64),
+            state_jacobian,
+            callback=callback,
+            damping=metric_damping,
+            max_scale=metric_max_scale,
+            gtol=metric_bfgs_gtol,
+            maxiter=maxiter,
+        )
+        return result
+
     counter = {"value": 0}
 
     def callback(intermediate_result):
         counter["value"] += 1
-        if counter["value"] % print_every:
+        if counter["value"] % 10:
             return
         energy = float(getattr(intermediate_result, "fun", np.nan))
         lm_jac = getattr(intermediate_result, "jac", None)
         if lm_jac is None:
-            grad = cache["g"]
-            gmax = float(np.max(np.abs(grad))) if grad is not None else float("nan")
+            gmax = float("nan")
         else:
             gmax = float(np.max(np.abs(lm_jac)))
         append_row_csv(
@@ -306,7 +353,7 @@ def main() -> None:
                 flush=True,
             )
             print(f"E(FCI singlet) = {e_fci:.12f}  <S^2>={s2_fci:.3e}", flush=True)
-            print(f"Using {seed_label} seed", flush=True)
+            print(f"Using {seed_label} seed with optimizer={optimizer}", flush=True)
             e_initial = state_energy(parameterization, x0, h)
             print(f"E(initial) = {e_initial:.12f}", flush=True)
             result = optimize_composite(parameterization, x0, h, trace, float(r))
