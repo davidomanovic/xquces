@@ -73,9 +73,8 @@ def _left_chart_kappa(
     return np.tensordot(params, basis, axes=(0, 0))
 
 
-def _right_chart_basis(chart: object) -> np.ndarray:
+def _right_chart_basis(chart: object, norb: int) -> np.ndarray:
     if isinstance(chart, IGCR2ReferenceOVUnitaryChart):
-        norb = chart.norb
         nocc = chart.nocc
         nvirt = chart.nvirt
         ncomplex = nocc * nvirt
@@ -91,7 +90,6 @@ def _right_chart_basis(chart: object) -> np.ndarray:
                 basis[idx + ncomplex, q, p] = 1j
         return basis
     if isinstance(chart, IGCR2RealReferenceOVUnitaryChart):
-        norb = chart.norb
         nocc = chart.nocc
         nvirt = chart.nvirt
         nreal = nocc * nvirt
@@ -104,6 +102,8 @@ def _right_chart_basis(chart: object) -> np.ndarray:
                 basis[idx, p, q] = 1.0
                 basis[idx, q, p] = -1.0
         return basis
+    if isinstance(chart, (IGCR2LeftUnitaryChart, IGCR2BlockDiagLeftUnitaryChart)):
+        return _left_chart_basis(chart, norb)
     raise NotImplementedError(type(chart).__name__)
 
 
@@ -118,6 +118,8 @@ def _right_chart_kappa(chart: object, params: np.ndarray, norb: int) -> np.ndarr
             return np.zeros((norb, norb), dtype=np.complex128)
         full = np.concatenate([params, np.zeros_like(params)])
         return ov_generator_from_params(full, norb, chart.nocc)
+    if isinstance(chart, (IGCR2LeftUnitaryChart, IGCR2BlockDiagLeftUnitaryChart)):
+        return _left_chart_kappa(chart, params, norb)
     raise NotImplementedError(type(chart).__name__)
 
 
@@ -401,7 +403,7 @@ def make_restricted_gcr_jacobian(
     left_chart = parameterization._left_orbital_chart
     right_chart = parameterization.right_orbital_chart
     left_basis = _left_chart_basis(left_chart, norb)
-    right_basis = _right_chart_basis(right_chart)
+    right_basis = _right_chart_basis(right_chart, norb)
     tensor_a = _one_body_tensor(norb, nelec[0])
     tensor_b = _one_body_tensor(norb, nelec[1])
     reference_mat = reshape_state(
@@ -533,8 +535,8 @@ def _make_spin_separated_gcr_jacobian(
 
     left_basis_alpha = _left_chart_basis(left_chart_alpha, norb)
     left_basis_beta = _left_chart_basis(left_chart_beta, norb)
-    right_basis_alpha = _right_chart_basis(right_chart_alpha)
-    right_basis_beta = _right_chart_basis(right_chart_beta)
+    right_basis_alpha = _right_chart_basis(right_chart_alpha, norb)
+    right_basis_beta = _right_chart_basis(right_chart_beta, norb)
 
     tensor_a = _one_body_tensor(norb, nelec[0])
     tensor_b = _one_body_tensor(norb, nelec[1])
