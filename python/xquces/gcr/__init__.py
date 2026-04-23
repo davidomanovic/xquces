@@ -42,6 +42,11 @@ from xquces.gcr.doci_reference_gcr2 import (
     GCR2DOCIReferenceParameterization,
     apply_doci_reference_global,
 )
+from xquces.gcr.pair_uccd_reference import (
+    GCR2PairUCCDParameterization,
+    GCR3PairUCCDParameterization,
+    GCR4PairUCCDParameterization,
+)
 from xquces.gcr.noci_reference_gcr2 import (
     GCR2NOCIReferenceAnsatz,
     GCR2NOCIReferenceParameterization,
@@ -95,6 +100,9 @@ __all__ = [
     "project_two_spectator_gauge",
     "GCR2DOCIReferenceAnsatz",
     "GCR2DOCIReferenceParameterization",
+    "GCR2PairUCCDParameterization",
+    "GCR3PairUCCDParameterization",
+    "GCR4PairUCCDParameterization",
     "GCR2NOCIReferenceAnsatz",
     "GCR2NOCIReferenceParameterization",
     "GCR3DOCIReferenceAnsatz",
