@@ -164,12 +164,8 @@ def main():
         )
         E_igcr234_seed = float(ham_xq.expectation(psi_seed))
 
-        def params_to_vec(x):
-            return igcr234_param.ansatz_from_parameters(x).apply(
-                Phi0,
-                nelec=nelec,
-                copy=True,
-            )
+        params_to_vec = igcr234_param.params_to_vec(Phi0, nelec)
+        params_to_vec_jacobian = igcr234_param.params_to_vec_jacobian(Phi0, nelec)
 
         it_counter = {"k": 0}
 
@@ -203,6 +199,7 @@ def main():
             params_to_vec,
             H,
             x0=x0,
+            jac=params_to_vec_jacobian,
             ftol=1e-12,
             gtol=1e-6,
             maxiter=300,
