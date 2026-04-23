@@ -41,6 +41,8 @@ from xquces.gcr import (
     GCRAnsatz,
     GCRSpinBalancedParameterization,
     GCRSpinRestrictedParameterization,
+    IGCR234Ansatz,
+    IGCR234SpinRestrictedParameterization,
     gcr_from_ucj_ansatz,
 )
 from xquces.gcr.init import GaugeFixedGCRBalancedDFSeed
@@ -129,6 +131,8 @@ __all__ = [
     "IGCR2SpinRestrictedParameterization",
     "IGCR3SpinRestrictedParameterization",
     "IGCR4SpinRestrictedParameterization",
+    "IGCR234Ansatz",
+    "IGCR234SpinRestrictedParameterization",
     "minimize_linear_method",
     "apply_spin_square",
     "spin_square",
