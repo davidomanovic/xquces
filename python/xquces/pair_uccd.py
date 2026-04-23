@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import itertools
 from dataclasses import dataclass
 from functools import cache
 from typing import Callable
@@ -13,8 +12,8 @@ from xquces.states import _doci_spatial_basis, _doci_subspace_indices, hartree_f
 
 
 @cache
-def _pair_uccd_pairs(norb: int) -> tuple[tuple[int, int], ...]:
-    return tuple(itertools.combinations(range(norb), 2))
+def _pair_uccd_ov_pairs(norb: int, nocc: int) -> tuple[tuple[int, int], ...]:
+    return tuple((i, a) for i in range(nocc) for a in range(nocc, norb))
 
 
 @cache
@@ -29,15 +28,15 @@ def _pair_uccd_generator_basis(
     dim = len(basis)
     basis_index = {occ: i for i, occ in enumerate(basis)}
     generators: list[np.ndarray] = []
-    for p, q in _pair_uccd_pairs(norb):
+    for i, a in _pair_uccd_ov_pairs(norb, npair):
         gen = np.zeros((dim, dim), dtype=np.float64)
         for col, occ in enumerate(basis):
             occ_set = set(occ)
-            if q in occ_set and p not in occ_set:
-                target = tuple(sorted((occ_set - {q}) | {p}))
+            if i in occ_set and a not in occ_set:
+                target = tuple(sorted((occ_set - {i}) | {a}))
                 gen[basis_index[target], col] += 1.0
-            elif p in occ_set and q not in occ_set:
-                target = tuple(sorted((occ_set - {p}) | {q}))
+            elif a in occ_set and i not in occ_set:
+                target = tuple(sorted((occ_set - {a}) | {i}))
                 gen[basis_index[target], col] -= 1.0
         generators.append(gen)
     return tuple(generators)
@@ -112,7 +111,7 @@ def pair_uccd_state(
     if nelec[0] != nelec[1]:
         raise ValueError("Pair-UCCD reference requires n_alpha == n_beta")
     if params is None:
-        params = np.zeros(len(_pair_uccd_pairs(norb)), dtype=np.float64)
+        params = np.zeros(len(_pair_uccd_ov_pairs(norb, nelec[0])), dtype=np.float64)
     reference = hartree_fock_state(norb, nelec)
     return apply_pair_uccd_reference_global(
         reference,
@@ -167,7 +166,7 @@ class PairUCCDStateParameterization:
 
     @property
     def pair_indices(self) -> tuple[tuple[int, int], ...]:
-        return _pair_uccd_pairs(self.norb)
+        return _pair_uccd_ov_pairs(self.norb, self.nelec[0])
 
     @property
     def n_params(self) -> int:
