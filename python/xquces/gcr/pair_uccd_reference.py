@@ -48,6 +48,13 @@ def _seed_from_ansatz(reference_n_params: int, ansatz_parameterization, ansatz) 
     return np.concatenate([np.zeros(reference_n_params, dtype=np.float64), ansatz_params])
 
 
+def _combined_seed(reference_params: np.ndarray, ansatz_params: np.ndarray) -> np.ndarray:
+    return np.concatenate([
+        np.asarray(reference_params, dtype=np.float64),
+        np.asarray(ansatz_params, dtype=np.float64),
+    ])
+
+
 def _transfer_params(self, previous_parameters, previous_parameterization, old_for_new, phases, orbital_overlap, block_diagonal):
     if previous_parameterization is None:
         previous_parameterization = self
@@ -178,6 +185,21 @@ class GCR2PairUCCDParameterization:
     def parameters_from_ucj_ansatz(self, ansatz: UCJAnsatz) -> np.ndarray:
         return _seed_from_ucj(self.n_reference_params, self.ansatz_parameterization, ansatz)
 
+    def reference_parameters_from_t2(self, t2: np.ndarray, *, scale: float = 0.5) -> np.ndarray:
+        return self.reference_parameterization.parameters_from_t2(t2, scale=scale)
+
+    def parameters_from_t2(self, t2: np.ndarray, *, scale: float = 0.5) -> np.ndarray:
+        return _combined_seed(
+            self.reference_parameters_from_t2(t2, scale=scale),
+            np.zeros(self.n_ansatz_params, dtype=np.float64),
+        )
+
+    def parameters_from_t2_and_ucj_ansatz(self, t2: np.ndarray, ansatz: UCJAnsatz, *, pair_scale: float = 0.5) -> np.ndarray:
+        return _combined_seed(
+            self.reference_parameters_from_t2(t2, scale=pair_scale),
+            self.ansatz_parameterization.parameters_from_ucj_ansatz(ansatz),
+        )
+
     def transfer_parameters_from(self, previous_parameters: np.ndarray, previous_parameterization: object | None = None, old_for_new: np.ndarray | None = None, phases: np.ndarray | None = None, orbital_overlap: np.ndarray | None = None, block_diagonal: bool = True) -> np.ndarray:
         return _transfer_params(self, previous_parameters, previous_parameterization, old_for_new, phases, orbital_overlap, block_diagonal)
 
@@ -268,6 +290,22 @@ class GCR3PairUCCDParameterization:
             omega_scale=self.omega_seed_scale,
         )
         return self.parameters_from_ansatz(seeded)
+
+    def reference_parameters_from_t2(self, t2: np.ndarray, *, scale: float = 0.5) -> np.ndarray:
+        return self.reference_parameterization.parameters_from_t2(t2, scale=scale)
+
+    def parameters_from_t2(self, t2: np.ndarray, *, scale: float = 0.5) -> np.ndarray:
+        return _combined_seed(
+            self.reference_parameters_from_t2(t2, scale=scale),
+            np.zeros(self.n_ansatz_params, dtype=np.float64),
+        )
+
+    def parameters_from_t2_and_ucj_ansatz(self, t2: np.ndarray, ansatz: UCJAnsatz, *, pair_scale: float = 0.5) -> np.ndarray:
+        ansatz_params = self.parameters_from_ucj_ansatz(ansatz)[self.n_reference_params :]
+        return _combined_seed(
+            self.reference_parameters_from_t2(t2, scale=pair_scale),
+            ansatz_params,
+        )
 
     def transfer_parameters_from(self, previous_parameters: np.ndarray, previous_parameterization: object | None = None, old_for_new: np.ndarray | None = None, phases: np.ndarray | None = None, orbital_overlap: np.ndarray | None = None, block_diagonal: bool = True) -> np.ndarray:
         return _transfer_params(self, previous_parameters, previous_parameterization, old_for_new, phases, orbital_overlap, block_diagonal)
@@ -365,6 +403,22 @@ class GCR4PairUCCDParameterization:
             sigma_scale=self.sigma_seed_scale,
         )
         return self.parameters_from_ansatz(seeded)
+
+    def reference_parameters_from_t2(self, t2: np.ndarray, *, scale: float = 0.5) -> np.ndarray:
+        return self.reference_parameterization.parameters_from_t2(t2, scale=scale)
+
+    def parameters_from_t2(self, t2: np.ndarray, *, scale: float = 0.5) -> np.ndarray:
+        return _combined_seed(
+            self.reference_parameters_from_t2(t2, scale=scale),
+            np.zeros(self.n_ansatz_params, dtype=np.float64),
+        )
+
+    def parameters_from_t2_and_ucj_ansatz(self, t2: np.ndarray, ansatz: UCJAnsatz, *, pair_scale: float = 0.5) -> np.ndarray:
+        ansatz_params = self.parameters_from_ucj_ansatz(ansatz)[self.n_reference_params :]
+        return _combined_seed(
+            self.reference_parameters_from_t2(t2, scale=pair_scale),
+            ansatz_params,
+        )
 
     def transfer_parameters_from(self, previous_parameters: np.ndarray, previous_parameterization: object | None = None, old_for_new: np.ndarray | None = None, phases: np.ndarray | None = None, orbital_overlap: np.ndarray | None = None, block_diagonal: bool = True) -> np.ndarray:
         return _transfer_params(self, previous_parameters, previous_parameterization, old_for_new, phases, orbital_overlap, block_diagonal)
