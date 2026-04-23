@@ -55,6 +55,7 @@ from xquces.gcr.doci_reference_gcr4 import (
 )
 from xquces.gcr.igcr3 import IGCR3SpinRestrictedParameterization
 from xquces.gcr.igcr4 import IGCR4SpinRestrictedParameterization
+from xquces.gcr.igcr234 import IGCR234Ansatz, IGCR234SpinRestrictedParameterization
 from xquces.gcr.restricted_jacobian_ext import make_restricted_gcr_jacobian
 from xquces.gcr.spin_balanced_igcr4 import (
     FixedOrbitalDiagonalModel,
@@ -105,6 +106,8 @@ __all__ = [
     "IGCR2SpinRestrictedParameterization",
     "IGCR3SpinRestrictedParameterization",
     "IGCR4SpinRestrictedParameterization",
+    "IGCR234Ansatz",
+    "IGCR234SpinRestrictedParameterization",
     "make_restricted_gcr_jacobian",
     "FixedOrbitalDiagonalModel",
     "FixedSectorDiagonalBasis",
