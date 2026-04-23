@@ -10,8 +10,8 @@ from xquces.gcr.igcr2 import (
     IGCR2SpinRestrictedParameterization,
     orbital_relabeling_from_overlap,
 )
-from xquces.gcr.igcr3 import IGCR3SpinRestrictedParameterization
-from xquces.gcr.igcr4 import IGCR4SpinRestrictedParameterization
+from xquces.gcr.igcr3 import IGCR3Ansatz, IGCR3SpinRestrictedParameterization
+from xquces.gcr.igcr4 import IGCR4Ansatz, IGCR4SpinRestrictedParameterization
 from xquces.pair_uccd import PairUCCDStateParameterization
 from xquces.ucj.model import UCJAnsatz
 
@@ -191,6 +191,8 @@ class GCR3PairUCCDParameterization:
     right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
     real_right_orbital_chart: bool = False
     left_right_ov_relative_scale: float | None = None
+    tau_seed_scale: float = 0.25
+    omega_seed_scale: float = 0.10
 
     @property
     def reference_parameterization(self) -> PairUCCDStateParameterization:
@@ -259,7 +261,13 @@ class GCR3PairUCCDParameterization:
         return _seed_from_ansatz(self.n_reference_params, self.ansatz_parameterization, ansatz)
 
     def parameters_from_ucj_ansatz(self, ansatz: UCJAnsatz) -> np.ndarray:
-        return _seed_from_ucj(self.n_reference_params, self.ansatz_parameterization, ansatz)
+        seeded = IGCR3Ansatz.from_ucj_ansatz(
+            ansatz,
+            nocc=self.nocc,
+            tau_scale=self.tau_seed_scale,
+            omega_scale=self.omega_seed_scale,
+        )
+        return self.parameters_from_ansatz(seeded)
 
     def transfer_parameters_from(self, previous_parameters: np.ndarray, previous_parameterization: object | None = None, old_for_new: np.ndarray | None = None, phases: np.ndarray | None = None, orbital_overlap: np.ndarray | None = None, block_diagonal: bool = True) -> np.ndarray:
         return _transfer_params(self, previous_parameters, previous_parameterization, old_for_new, phases, orbital_overlap, block_diagonal)
@@ -274,6 +282,11 @@ class GCR4PairUCCDParameterization:
     right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
     real_right_orbital_chart: bool = False
     left_right_ov_relative_scale: float | None = None
+    tau_seed_scale: float = 0.25
+    omega_seed_scale: float = 0.10
+    eta_seed_scale: float = 0.05
+    rho_seed_scale: float = 0.02
+    sigma_seed_scale: float = 0.01
 
     @property
     def reference_parameterization(self) -> PairUCCDStateParameterization:
@@ -342,7 +355,16 @@ class GCR4PairUCCDParameterization:
         return _seed_from_ansatz(self.n_reference_params, self.ansatz_parameterization, ansatz)
 
     def parameters_from_ucj_ansatz(self, ansatz: UCJAnsatz) -> np.ndarray:
-        return _seed_from_ucj(self.n_reference_params, self.ansatz_parameterization, ansatz)
+        seeded = IGCR4Ansatz.from_ucj_ansatz(
+            ansatz,
+            nocc=self.nocc,
+            tau_scale=self.tau_seed_scale,
+            omega_scale=self.omega_seed_scale,
+            eta_scale=self.eta_seed_scale,
+            rho_scale=self.rho_seed_scale,
+            sigma_scale=self.sigma_seed_scale,
+        )
+        return self.parameters_from_ansatz(seeded)
 
     def transfer_parameters_from(self, previous_parameters: np.ndarray, previous_parameterization: object | None = None, old_for_new: np.ndarray | None = None, phases: np.ndarray | None = None, orbital_overlap: np.ndarray | None = None, block_diagonal: bool = True) -> np.ndarray:
         return _transfer_params(self, previous_parameters, previous_parameterization, old_for_new, phases, orbital_overlap, block_diagonal)
