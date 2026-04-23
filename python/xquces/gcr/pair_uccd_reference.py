@@ -5,10 +5,15 @@ from typing import Callable
 
 import numpy as np
 
-from xquces.gcr.igcr2 import IGCR2LeftUnitaryChart, IGCR2SpinRestrictedParameterization
+from xquces.gcr.igcr2 import (
+    IGCR2LeftUnitaryChart,
+    IGCR2SpinRestrictedParameterization,
+    orbital_relabeling_from_overlap,
+)
 from xquces.gcr.igcr3 import IGCR3SpinRestrictedParameterization
 from xquces.gcr.igcr4 import IGCR4SpinRestrictedParameterization
 from xquces.pair_uccd import PairUCCDStateParameterization
+from xquces.ucj.model import UCJAnsatz
 
 
 def _make_composite(reference_parameterization, ansatz_parameterization, nelec):
@@ -25,6 +30,71 @@ def _make_composite_jacobian(composite):
     from xquces.state_parameterization import make_composite_reference_ansatz_jacobian
 
     return make_composite_reference_ansatz_jacobian(composite)
+
+
+def _seed_from_ucj(reference_n_params: int, ansatz_parameterization, ansatz: UCJAnsatz) -> np.ndarray:
+    ansatz_params = np.asarray(
+        ansatz_parameterization.parameters_from_ucj_ansatz(ansatz),
+        dtype=np.float64,
+    )
+    return np.concatenate([np.zeros(reference_n_params, dtype=np.float64), ansatz_params])
+
+
+def _seed_from_ansatz(reference_n_params: int, ansatz_parameterization, ansatz) -> np.ndarray:
+    ansatz_params = np.asarray(
+        ansatz_parameterization.parameters_from_ansatz(ansatz),
+        dtype=np.float64,
+    )
+    return np.concatenate([np.zeros(reference_n_params, dtype=np.float64), ansatz_params])
+
+
+def _transfer_params(self, previous_parameters, previous_parameterization, old_for_new, phases, orbital_overlap, block_diagonal):
+    if previous_parameterization is None:
+        previous_parameterization = self
+    if orbital_overlap is not None:
+        if old_for_new is not None or phases is not None:
+            raise ValueError("Pass either orbital_overlap or explicit relabeling, not both.")
+        old_for_new, phases = orbital_relabeling_from_overlap(
+            orbital_overlap,
+            nocc=self.nocc,
+            block_diagonal=block_diagonal,
+        )
+    if isinstance(previous_parameterization, type(self)):
+        prev = np.asarray(previous_parameters, dtype=np.float64)
+        if prev.shape != (previous_parameterization.n_params,):
+            raise ValueError(f"Expected {(previous_parameterization.n_params,)}, got {prev.shape}.")
+        if (
+            previous_parameterization.norb == self.norb
+            and previous_parameterization.nocc == self.nocc
+            and old_for_new is None
+            and phases is None
+        ):
+            return np.array(prev, copy=True)
+        _, prev_ansatz = previous_parameterization.split_parameters(prev)
+        ansatz_params = self.ansatz_parameterization.transfer_parameters_from(
+            prev_ansatz,
+            previous_parameterization=previous_parameterization.ansatz_parameterization,
+            old_for_new=old_for_new,
+            phases=phases,
+            orbital_overlap=None,
+            block_diagonal=block_diagonal,
+        )
+        return np.concatenate([
+            np.zeros(self.n_reference_params, dtype=np.float64),
+            np.asarray(ansatz_params, dtype=np.float64),
+        ])
+    ansatz_params = self.ansatz_parameterization.transfer_parameters_from(
+        previous_parameters,
+        previous_parameterization=previous_parameterization,
+        old_for_new=old_for_new,
+        phases=phases,
+        orbital_overlap=None,
+        block_diagonal=block_diagonal,
+    )
+    return np.concatenate([
+        np.zeros(self.n_reference_params, dtype=np.float64),
+        np.asarray(ansatz_params, dtype=np.float64),
+    ])
 
 
 @dataclass(frozen=True)
@@ -58,11 +128,7 @@ class GCR2PairUCCDParameterization:
 
     @property
     def _composite(self):
-        return _make_composite(
-            self.reference_parameterization,
-            self.ansatz_parameterization,
-            (self.nocc, self.nocc),
-        )
+        return _make_composite(self.reference_parameterization, self.ansatz_parameterization, (self.nocc, self.nocc))
 
     @property
     def n_reference_params(self) -> int:
@@ -106,6 +172,15 @@ class GCR2PairUCCDParameterization:
     def params_to_vec(self) -> Callable[[np.ndarray], np.ndarray]:
         return self._composite.params_to_vec()
 
+    def parameters_from_ansatz(self, ansatz) -> np.ndarray:
+        return _seed_from_ansatz(self.n_reference_params, self.ansatz_parameterization, ansatz)
+
+    def parameters_from_ucj_ansatz(self, ansatz: UCJAnsatz) -> np.ndarray:
+        return _seed_from_ucj(self.n_reference_params, self.ansatz_parameterization, ansatz)
+
+    def transfer_parameters_from(self, previous_parameters: np.ndarray, previous_parameterization: object | None = None, old_for_new: np.ndarray | None = None, phases: np.ndarray | None = None, orbital_overlap: np.ndarray | None = None, block_diagonal: bool = True) -> np.ndarray:
+        return _transfer_params(self, previous_parameters, previous_parameterization, old_for_new, phases, orbital_overlap, block_diagonal)
+
 
 @dataclass(frozen=True)
 class GCR3PairUCCDParameterization:
@@ -136,11 +211,7 @@ class GCR3PairUCCDParameterization:
 
     @property
     def _composite(self):
-        return _make_composite(
-            self.reference_parameterization,
-            self.ansatz_parameterization,
-            (self.nocc, self.nocc),
-        )
+        return _make_composite(self.reference_parameterization, self.ansatz_parameterization, (self.nocc, self.nocc))
 
     @property
     def n_reference_params(self) -> int:
@@ -183,6 +254,15 @@ class GCR3PairUCCDParameterization:
 
     def params_to_vec(self) -> Callable[[np.ndarray], np.ndarray]:
         return self._composite.params_to_vec()
+
+    def parameters_from_ansatz(self, ansatz) -> np.ndarray:
+        return _seed_from_ansatz(self.n_reference_params, self.ansatz_parameterization, ansatz)
+
+    def parameters_from_ucj_ansatz(self, ansatz: UCJAnsatz) -> np.ndarray:
+        return _seed_from_ucj(self.n_reference_params, self.ansatz_parameterization, ansatz)
+
+    def transfer_parameters_from(self, previous_parameters: np.ndarray, previous_parameterization: object | None = None, old_for_new: np.ndarray | None = None, phases: np.ndarray | None = None, orbital_overlap: np.ndarray | None = None, block_diagonal: bool = True) -> np.ndarray:
+        return _transfer_params(self, previous_parameters, previous_parameterization, old_for_new, phases, orbital_overlap, block_diagonal)
 
 
 @dataclass(frozen=True)
@@ -214,11 +294,7 @@ class GCR4PairUCCDParameterization:
 
     @property
     def _composite(self):
-        return _make_composite(
-            self.reference_parameterization,
-            self.ansatz_parameterization,
-            (self.nocc, self.nocc),
-        )
+        return _make_composite(self.reference_parameterization, self.ansatz_parameterization, (self.nocc, self.nocc))
 
     @property
     def n_reference_params(self) -> int:
@@ -261,3 +337,12 @@ class GCR4PairUCCDParameterization:
 
     def params_to_vec(self) -> Callable[[np.ndarray], np.ndarray]:
         return self._composite.params_to_vec()
+
+    def parameters_from_ansatz(self, ansatz) -> np.ndarray:
+        return _seed_from_ansatz(self.n_reference_params, self.ansatz_parameterization, ansatz)
+
+    def parameters_from_ucj_ansatz(self, ansatz: UCJAnsatz) -> np.ndarray:
+        return _seed_from_ucj(self.n_reference_params, self.ansatz_parameterization, ansatz)
+
+    def transfer_parameters_from(self, previous_parameters: np.ndarray, previous_parameterization: object | None = None, old_for_new: np.ndarray | None = None, phases: np.ndarray | None = None, orbital_overlap: np.ndarray | None = None, block_diagonal: bool = True) -> np.ndarray:
+        return _transfer_params(self, previous_parameters, previous_parameterization, old_for_new, phases, orbital_overlap, block_diagonal)
