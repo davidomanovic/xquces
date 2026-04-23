@@ -2,6 +2,7 @@ use pyo3::prelude::*;
 
 mod orbital_rotation;
 mod gcr_pairhop;
+mod pair_uccd;
 mod sqd;
 mod ucj_diag;
 
@@ -37,6 +38,10 @@ fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(
         gcr_pairhop::apply_gcr2_pairhop_product_middle_cached_in_place_num_rep,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        pair_uccd::apply_pair_uccd_doci_unitary_in_place,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
