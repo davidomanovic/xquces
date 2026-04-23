@@ -14,6 +14,7 @@ from xquces.gcr.parameterization import (
 )
 from xquces.gcr.init import GaugeFixedGCRBalancedDFSeed
 from xquces.gcr.igcr2 import IGCR2SpinRestrictedParameterization
+from xquces.gcr.igcr23 import IGCR23Ansatz, IGCR23SpinRestrictedParameterization
 from xquces.gcr.commutator_gcr2 import (
     GCR2PairHopAnsatz,
     GCR2PairHopParameterization,
@@ -104,6 +105,8 @@ __all__ = [
     "apply_gcr2_pairhop_product_middle",
     "gcr2_pairhop_middle_generator",
     "IGCR2SpinRestrictedParameterization",
+    "IGCR23Ansatz",
+    "IGCR23SpinRestrictedParameterization",
     "IGCR3SpinRestrictedParameterization",
     "IGCR4SpinRestrictedParameterization",
     "IGCR234Ansatz",
