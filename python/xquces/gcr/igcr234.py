@@ -13,12 +13,15 @@ from xquces.gcr.igcr2 import (
     IGCR2ReferenceOVUnitaryChart,
     _symmetric_matrix_from_values,
     _validate_pairs,
+    reduce_spin_restricted,
 )
 from xquces.gcr.igcr3 import (
     IGCR3Ansatz,
     IGCR3SpinRestrictedSpec,
     _default_pair_indices,
+    _default_tau_indices,
     _default_triple_indices,
+    _validate_ordered_pairs,
     _validate_triples,
     apply_igcr3_spin_restricted_diagonal,
     spin_restricted_triples_seed_from_pair_params,
@@ -29,6 +32,7 @@ from xquces.gcr.igcr4 import (
     _default_eta_indices,
     _default_rho_indices,
     _default_sigma_indices,
+    _validate_rho_indices,
     _validate_sigma_indices,
     apply_igcr4_spin_restricted_diagonal,
     spin_restricted_quartic_seed_from_pair_params,
@@ -36,9 +40,7 @@ from xquces.gcr.igcr4 import (
 from xquces.gcr.model import GCRAnsatz
 from xquces.orbitals import apply_orbital_rotation
 from xquces.ucj.init import UCJRestrictedProjectedDFSeed
-from xquces.ucj._unitary import GaugeFixedInternalUnitaryChart
 from xquces.ucj.model import SpinRestrictedSpec, UCJAnsatz
-from xquces.gcr.igcr2 import reduce_spin_restricted
 
 
 def _infer_norb_from_unique_pair_count(count: int) -> int:
@@ -50,22 +52,52 @@ def _infer_norb_from_unique_pair_count(count: int) -> int:
     return n
 
 
-def _infer_norb_from_unique_triple_count(count: int) -> int:
-    n = 0
-    while n * (n - 1) * (n - 2) // 6 < count:
-        n += 1
-    if n * (n - 1) * (n - 2) // 6 != count:
-        raise ValueError("omega_values has inconsistent length")
-    return n
+def _pair_values_from_matrix(pair: np.ndarray) -> np.ndarray:
+    pair = np.asarray(pair, dtype=np.float64)
+    norb = pair.shape[0]
+    return np.asarray([pair[p, q] for p, q in _default_pair_indices(norb)], dtype=np.float64)
 
 
-def _infer_norb_from_unique_quadruple_count(count: int) -> int:
-    n = 0
-    while n * (n - 1) * (n - 2) * (n - 3) // 24 < count:
-        n += 1
-    if n * (n - 1) * (n - 2) * (n - 3) // 24 != count:
-        raise ValueError("sigma_values has inconsistent length")
-    return n
+def _tau_values_from_matrix(tau: np.ndarray) -> np.ndarray:
+    tau = np.asarray(tau, dtype=np.float64)
+    norb = tau.shape[0]
+    return np.asarray([tau[p, q] for p, q in _default_tau_indices(norb)], dtype=np.float64)
+
+
+def _ordered_matrix_from_sparse_values(
+    values: np.ndarray,
+    norb: int,
+    pairs: list[tuple[int, int]],
+) -> np.ndarray:
+    out = np.zeros((norb, norb), dtype=np.float64)
+    values = np.asarray(values, dtype=np.float64)
+    if values.shape != (len(pairs),):
+        raise ValueError(f"Expected {(len(pairs),)}, got {values.shape}.")
+    for value, (p, q) in zip(values, pairs):
+        out[p, q] = value
+    np.fill_diagonal(out, 0.0)
+    return out
+
+
+def _full_tau_values_from_sparse_values(
+    values: np.ndarray,
+    norb: int,
+    pairs: list[tuple[int, int]],
+) -> np.ndarray:
+    tau = _ordered_matrix_from_sparse_values(values, norb, pairs)
+    return _tau_values_from_matrix(tau)
+
+
+def _full_sparse_dict(
+    values: np.ndarray,
+    indices,
+):
+    return {idx: float(val) for idx, val in zip(indices, np.asarray(values, dtype=np.float64))}
+
+
+def _vector_from_sparse_dict(default_indices, sparse_dict) -> np.ndarray:
+    return np.asarray([sparse_dict.get(idx, 0.0) for idx in default_indices], dtype=np.float64)
+
 
 def _irreducible_pair_from_diagonal(diagonal: SpinRestrictedSpec) -> np.ndarray:
     if not isinstance(diagonal, SpinRestrictedSpec):
@@ -76,45 +108,73 @@ def _irreducible_pair_from_diagonal(diagonal: SpinRestrictedSpec) -> np.ndarray:
 @dataclass(frozen=True)
 class IGCR234SpinRestrictedSpec:
     pair_values: np.ndarray
+    tau_values: np.ndarray
     omega_values: np.ndarray
+    eta_values: np.ndarray
+    rho_values: np.ndarray
     sigma_values: np.ndarray
 
     @property
     def norb(self) -> int:
-        n_pair = len(np.asarray(self.pair_values, dtype=np.float64))
-        if n_pair:
-            return _infer_norb_from_unique_pair_count(n_pair)
-        n_omega = len(np.asarray(self.omega_values, dtype=np.float64))
-        if n_omega:
-            return _infer_norb_from_unique_triple_count(n_omega)
-        n_sigma = len(np.asarray(self.sigma_values, dtype=np.float64))
-        if n_sigma:
-            return _infer_norb_from_unique_quadruple_count(n_sigma)
-        return 0
+        return _infer_norb_from_unique_pair_count(len(np.asarray(self.pair_values, dtype=np.float64)))
 
     @property
-    def pair_indices(self) -> list[tuple[int, int]]:
+    def pair_indices(self):
         return _default_pair_indices(self.norb)
 
     @property
-    def omega_indices(self) -> list[tuple[int, int, int]]:
+    def tau_indices(self):
+        return _default_tau_indices(self.norb)
+
+    @property
+    def omega_indices(self):
         return _default_triple_indices(self.norb)
 
     @property
-    def sigma_indices(self) -> list[tuple[int, int, int, int]]:
+    def eta_indices(self):
+        return _default_eta_indices(self.norb)
+
+    @property
+    def rho_indices(self):
+        return _default_rho_indices(self.norb)
+
+    @property
+    def sigma_indices(self):
         return _default_sigma_indices(self.norb)
 
     def pair_matrix(self) -> np.ndarray:
-        pair_values = np.asarray(self.pair_values, dtype=np.float64)
-        if pair_values.shape != (len(self.pair_indices),):
-            raise ValueError("pair_values has inconsistent shape")
-        return _symmetric_matrix_from_values(pair_values, self.norb, self.pair_indices)
+        return _symmetric_matrix_from_values(
+            np.asarray(self.pair_values, dtype=np.float64),
+            self.norb,
+            self.pair_indices,
+        )
+
+    def tau_vector(self) -> np.ndarray:
+        tau = np.asarray(self.tau_values, dtype=np.float64)
+        if tau.shape != (len(self.tau_indices),):
+            raise ValueError("tau_values has inconsistent shape")
+        return tau
+
+    def tau_matrix(self) -> np.ndarray:
+        return _ordered_matrix_from_sparse_values(self.tau_vector(), self.norb, self.tau_indices)
 
     def omega_vector(self) -> np.ndarray:
         omega = np.asarray(self.omega_values, dtype=np.float64)
         if omega.shape != (len(self.omega_indices),):
             raise ValueError("omega_values has inconsistent shape")
         return omega
+
+    def eta_vector(self) -> np.ndarray:
+        eta = np.asarray(self.eta_values, dtype=np.float64)
+        if eta.shape != (len(self.eta_indices),):
+            raise ValueError("eta_values has inconsistent shape")
+        return eta
+
+    def rho_vector(self) -> np.ndarray:
+        rho = np.asarray(self.rho_values, dtype=np.float64)
+        if rho.shape != (len(self.rho_indices),):
+            raise ValueError("rho_values has inconsistent shape")
+        return rho
 
     def sigma_vector(self) -> np.ndarray:
         sigma = np.asarray(self.sigma_values, dtype=np.float64)
@@ -126,7 +186,7 @@ class IGCR234SpinRestrictedSpec:
         return IGCR3SpinRestrictedSpec(
             double_params=np.zeros(self.norb, dtype=np.float64),
             pair_values=np.zeros(len(self.pair_indices), dtype=np.float64),
-            tau=np.zeros((self.norb, self.norb), dtype=np.float64),
+            tau=self.tau_matrix(),
             omega_values=self.omega_vector(),
         )
 
@@ -136,34 +196,10 @@ class IGCR234SpinRestrictedSpec:
             pair_values=np.zeros(len(self.pair_indices), dtype=np.float64),
             tau=np.zeros((self.norb, self.norb), dtype=np.float64),
             omega_values=np.zeros(len(self.omega_indices), dtype=np.float64),
-            eta_values=np.zeros(len(_default_eta_indices(self.norb)), dtype=np.float64),
-            rho_values=np.zeros(len(_default_rho_indices(self.norb)), dtype=np.float64),
+            eta_values=self.eta_vector(),
+            rho_values=self.rho_vector(),
             sigma_values=self.sigma_vector(),
         )
-
-    def phase_from_occupations(
-        self,
-        occ_alpha: np.ndarray,
-        occ_beta: np.ndarray,
-    ) -> float:
-        n = np.zeros(self.norb, dtype=np.float64)
-        n[np.asarray(occ_alpha, dtype=np.int64)] += 1.0
-        n[np.asarray(occ_beta, dtype=np.int64)] += 1.0
-        return self.phase_from_number_array(n)
-
-    def phase_from_number_array(self, n: np.ndarray) -> float:
-        n = np.asarray(n, dtype=np.float64)
-        if n.shape != (self.norb,):
-            raise ValueError("n must have shape (norb,)")
-        phase = 0.0
-        pair = self.pair_matrix()
-        for p, q in self.pair_indices:
-            phase += pair[p, q] * n[p] * n[q]
-        for value, (p, q, r) in zip(self.omega_vector(), self.omega_indices):
-            phase += value * n[p] * n[q] * n[r]
-        for value, (p, q, r, s) in zip(self.sigma_vector(), self.sigma_indices):
-            phase += value * n[p] * n[q] * n[r] * n[s]
-        return float(phase)
 
 
 @dataclass(frozen=True)
@@ -181,34 +217,10 @@ class IGCR234Ansatz:
 
     def apply(self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True) -> np.ndarray:
         arr = np.array(vec, dtype=np.complex128, copy=copy)
-        arr = apply_orbital_rotation(
-            arr,
-            self.u4,
-            norb=self.norb,
-            nelec=nelec,
-            copy=False,
-        )
-        arr = apply_igcr4_spin_restricted_diagonal(
-            arr,
-            self.diagonal.q_diagonal(),
-            self.norb,
-            nelec,
-            copy=False,
-        )
-        arr = apply_orbital_rotation(
-            arr,
-            self.u3,
-            norb=self.norb,
-            nelec=nelec,
-            copy=False,
-        )
-        arr = apply_igcr3_spin_restricted_diagonal(
-            arr,
-            self.diagonal.t_diagonal(),
-            self.norb,
-            nelec,
-            copy=False,
-        )
+        arr = apply_orbital_rotation(arr, self.u4, norb=self.norb, nelec=nelec, copy=False)
+        arr = apply_igcr4_spin_restricted_diagonal(arr, self.diagonal.q_diagonal(), self.norb, nelec, copy=False)
+        arr = apply_orbital_rotation(arr, self.u3, norb=self.norb, nelec=nelec, copy=False)
+        arr = apply_igcr3_spin_restricted_diagonal(arr, self.diagonal.t_diagonal(), self.norb, nelec, copy=False)
         arr = apply_igcr2_spin_restricted(
             arr,
             self.diagonal.pair_matrix(),
@@ -225,31 +237,34 @@ class IGCR234Ansatz:
         cls,
         ansatz: IGCR2Ansatz,
         *,
+        tau_scale: float = 0.0,
         omega_scale: float = 0.0,
+        eta_scale: float = 0.0,
+        rho_scale: float = 0.0,
         sigma_scale: float = 0.0,
     ) -> "IGCR234Ansatz":
         if not ansatz.is_spin_restricted:
             raise TypeError("iGCR234 is currently implemented only for spin-restricted seeds")
         pair = ansatz.diagonal.to_standard().pair_params
-        omega = spin_restricted_triples_seed_from_pair_params(
+        tau, omega = spin_restricted_triples_seed_from_pair_params(
             pair,
             ansatz.nocc,
-            tau_scale=0.0,
+            tau_scale=tau_scale,
             omega_scale=omega_scale,
-        )[1]
-        sigma = spin_restricted_quartic_seed_from_pair_params(
+        )
+        eta, rho, sigma = spin_restricted_quartic_seed_from_pair_params(
             pair,
             ansatz.nocc,
-            eta_scale=0.0,
-            rho_scale=0.0,
+            eta_scale=eta_scale,
+            rho_scale=rho_scale,
             sigma_scale=sigma_scale,
-        )[2]
+        )
         diagonal = IGCR234SpinRestrictedSpec(
-            pair_values=np.asarray(
-                [pair[p, q] for p, q in _default_pair_indices(pair.shape[0])],
-                dtype=np.float64,
-            ),
+            pair_values=_pair_values_from_matrix(pair),
+            tau_values=_tau_values_from_matrix(tau),
             omega_values=np.asarray(omega, dtype=np.float64),
+            eta_values=np.asarray(eta, dtype=np.float64),
+            rho_values=np.asarray(rho, dtype=np.float64),
             sigma_values=np.asarray(sigma, dtype=np.float64),
         )
         identity = np.eye(ansatz.norb, dtype=np.complex128)
@@ -267,24 +282,24 @@ class IGCR234Ansatz:
         cls,
         ansatz: IGCR3Ansatz,
         *,
+        eta_scale: float = 0.0,
+        rho_scale: float = 0.0,
         sigma_scale: float = 0.0,
     ) -> "IGCR234Ansatz":
-        if np.linalg.norm(ansatz.diagonal.tau_matrix()) > 1e-14:
-            raise ValueError("cannot embed nonzero tau sector into unique-triples iGCR234")
         pair = ansatz.diagonal.pair_matrix()
-        sigma = spin_restricted_quartic_seed_from_pair_params(
+        eta, rho, sigma = spin_restricted_quartic_seed_from_pair_params(
             pair,
             ansatz.nocc,
-            eta_scale=0.0,
-            rho_scale=0.0,
+            eta_scale=eta_scale,
+            rho_scale=rho_scale,
             sigma_scale=sigma_scale,
-        )[2]
+        )
         diagonal = IGCR234SpinRestrictedSpec(
-            pair_values=np.asarray(
-                [pair[p, q] for p, q in _default_pair_indices(pair.shape[0])],
-                dtype=np.float64,
-            ),
+            pair_values=_pair_values_from_matrix(pair),
+            tau_values=_tau_values_from_matrix(ansatz.diagonal.tau_matrix()),
             omega_values=np.asarray(ansatz.diagonal.omega_vector(), dtype=np.float64),
+            eta_values=np.asarray(eta, dtype=np.float64),
+            rho_values=np.asarray(rho, dtype=np.float64),
             sigma_values=np.asarray(sigma, dtype=np.float64),
         )
         identity = np.eye(ansatz.norb, dtype=np.complex128)
@@ -299,20 +314,13 @@ class IGCR234Ansatz:
 
     @classmethod
     def from_igcr4_ansatz(cls, ansatz: IGCR4Ansatz) -> "IGCR234Ansatz":
-        if np.linalg.norm(ansatz.diagonal.tau_matrix()) > 1e-14:
-            raise ValueError("cannot embed nonzero tau sector into unique-triples iGCR234")
-        if np.linalg.norm(ansatz.diagonal.eta_vector()) > 1e-14:
-            raise ValueError("cannot embed nonzero eta sector into unique-quadruples iGCR234")
-        if np.linalg.norm(ansatz.diagonal.rho_vector()) > 1e-14:
-            raise ValueError("cannot embed nonzero rho sector into unique-quadruples iGCR234")
-        pair = ansatz.diagonal.pair_matrix()
         diagonal = IGCR234SpinRestrictedSpec(
-            pair_values=np.asarray(
-                [pair[p, q] for p, q in _default_pair_indices(pair.shape[0])],
-                dtype=np.float64,
-            ),
-            omega_values=np.asarray(ansatz.diagonal.omega_vector(), dtype=np.float64),
-            sigma_values=np.asarray(ansatz.diagonal.sigma_vector(), dtype=np.float64),
+            pair_values=np.asarray(ansatz.diagonal.pair_values, dtype=np.float64),
+            tau_values=_tau_values_from_matrix(ansatz.diagonal.tau_matrix()),
+            omega_values=np.asarray(ansatz.diagonal.omega_values, dtype=np.float64),
+            eta_values=np.asarray(ansatz.diagonal.eta_values, dtype=np.float64),
+            rho_values=np.asarray(ansatz.diagonal.rho_values, dtype=np.float64),
+            sigma_values=np.asarray(ansatz.diagonal.sigma_values, dtype=np.float64),
         )
         identity = np.eye(ansatz.norb, dtype=np.complex128)
         return cls(
@@ -325,46 +333,34 @@ class IGCR234Ansatz:
         )
 
     @classmethod
-    def from_gcr_ansatz(
-        cls,
-        ansatz: GCRAnsatz,
-        nocc: int,
-        *,
-        omega_scale: float = 0.0,
-        sigma_scale: float = 0.0,
-    ) -> "IGCR234Ansatz":
-        return cls.from_igcr2_ansatz(
-            IGCR2Ansatz.from_gcr_ansatz(ansatz, nocc=nocc),
-            omega_scale=omega_scale,
-            sigma_scale=sigma_scale,
-        )
-
-    @classmethod
     def from_ucj_ansatz(
         cls,
         ansatz: UCJAnsatz,
         nocc: int,
         *,
-        omega_scale: float = 0.0,
-        sigma_scale: float = 0.0,
+        tau_scale: float = 1.0,
+        omega_scale: float = 1.0,
+        eta_scale: float = 1.0,
+        rho_scale: float = 1.0,
+        sigma_scale: float = 1.0,
     ) -> "IGCR234Ansatz":
         if not ansatz.is_spin_restricted:
             raise TypeError("iGCR234 is currently implemented only for spin-restricted seeds")
-
         if ansatz.n_layers == 1:
             return cls.from_igcr2_ansatz(
                 IGCR2Ansatz.from_ucj_ansatz(ansatz, nocc=nocc),
+                tau_scale=tau_scale,
                 omega_scale=omega_scale,
+                eta_scale=eta_scale,
+                rho_scale=rho_scale,
                 sigma_scale=sigma_scale,
             )
-
         if ansatz.n_layers != 3:
             raise ValueError("iGCR234 UCJ seeding currently expects either 1 or 3 layers")
 
         layer_q = ansatz.layers[0]
         layer_t = ansatz.layers[1]
         layer_j = ansatz.layers[2]
-
         final = ansatz.final_orbital_rotation
         if final is None:
             final = np.eye(ansatz.norb, dtype=np.complex128)
@@ -373,28 +369,27 @@ class IGCR234Ansatz:
         pair_t = _irreducible_pair_from_diagonal(layer_t.diagonal)
         pair_q = _irreducible_pair_from_diagonal(layer_q.diagonal)
 
-        omega_values = spin_restricted_triples_seed_from_pair_params(
+        tau, omega = spin_restricted_triples_seed_from_pair_params(
             pair_t,
             nocc,
-            tau_scale=0.0,
+            tau_scale=tau_scale,
             omega_scale=omega_scale,
-        )[1]
-
-        sigma_values = spin_restricted_quartic_seed_from_pair_params(
+        )
+        eta, rho, sigma = spin_restricted_quartic_seed_from_pair_params(
             pair_q,
             nocc,
-            eta_scale=0.0,
-            rho_scale=0.0,
+            eta_scale=eta_scale,
+            rho_scale=rho_scale,
             sigma_scale=sigma_scale,
-        )[2]
+        )
 
         diagonal = IGCR234SpinRestrictedSpec(
-            pair_values=np.asarray(
-                [pair_j[p, q] for p, q in _default_pair_indices(pair_j.shape[0])],
-                dtype=np.float64,
-            ),
-            omega_values=np.asarray(omega_values, dtype=np.float64),
-            sigma_values=np.asarray(sigma_values, dtype=np.float64),
+            pair_values=_pair_values_from_matrix(pair_j),
+            tau_values=_tau_values_from_matrix(tau),
+            omega_values=np.asarray(omega, dtype=np.float64),
+            eta_values=np.asarray(eta, dtype=np.float64),
+            rho_values=np.asarray(rho, dtype=np.float64),
+            sigma_values=np.asarray(sigma, dtype=np.float64),
         )
 
         return cls(
@@ -407,31 +402,64 @@ class IGCR234Ansatz:
         )
 
     @classmethod
-    def from_t_restricted(cls, t2, **kwargs):
-        omega_scale = kwargs.pop("omega_scale", 0.0)
-        sigma_scale = kwargs.pop("sigma_scale", 0.0)
-        n_reps = kwargs.pop("n_reps", 3)
-        ucj = UCJRestrictedProjectedDFSeed(t2=t2, n_reps=n_reps, **kwargs).build_ansatz()
-        return cls.from_ucj_ansatz(
-            ucj,
-            nocc=t2.shape[0],
-            omega_scale=omega_scale,
-            sigma_scale=sigma_scale,
-        )
-
-    @classmethod
     def from_ucj(
         cls,
         ansatz: UCJAnsatz,
         nocc: int,
         *,
-        omega_scale: float = 0.0,
-        sigma_scale: float = 0.0,
+        tau_scale: float = 1.0,
+        omega_scale: float = 1.0,
+        eta_scale: float = 1.0,
+        rho_scale: float = 1.0,
+        sigma_scale: float = 1.0,
     ) -> "IGCR234Ansatz":
         return cls.from_ucj_ansatz(
             ansatz,
             nocc,
+            tau_scale=tau_scale,
             omega_scale=omega_scale,
+            eta_scale=eta_scale,
+            rho_scale=rho_scale,
+            sigma_scale=sigma_scale,
+        )
+
+    @classmethod
+    def from_gcr_ansatz(
+        cls,
+        ansatz: GCRAnsatz,
+        nocc: int,
+        *,
+        tau_scale: float = 0.0,
+        omega_scale: float = 0.0,
+        eta_scale: float = 0.0,
+        rho_scale: float = 0.0,
+        sigma_scale: float = 0.0,
+    ) -> "IGCR234Ansatz":
+        return cls.from_igcr2_ansatz(
+            IGCR2Ansatz.from_gcr_ansatz(ansatz, nocc=nocc),
+            tau_scale=tau_scale,
+            omega_scale=omega_scale,
+            eta_scale=eta_scale,
+            rho_scale=rho_scale,
+            sigma_scale=sigma_scale,
+        )
+
+    @classmethod
+    def from_t_restricted(cls, t2, **kwargs):
+        tau_scale = kwargs.pop("tau_scale", 1.0)
+        omega_scale = kwargs.pop("omega_scale", 1.0)
+        eta_scale = kwargs.pop("eta_scale", 1.0)
+        rho_scale = kwargs.pop("rho_scale", 1.0)
+        sigma_scale = kwargs.pop("sigma_scale", 1.0)
+        n_reps = kwargs.pop("n_reps", 3)
+        ucj = UCJRestrictedProjectedDFSeed(t2=t2, n_reps=n_reps, **kwargs).build_ansatz()
+        return cls.from_ucj_ansatz(
+            ucj,
+            nocc=t2.shape[0],
+            tau_scale=tau_scale,
+            omega_scale=omega_scale,
+            eta_scale=eta_scale,
+            rho_scale=rho_scale,
             sigma_scale=sigma_scale,
         )
 
@@ -441,7 +469,10 @@ class IGCR234SpinRestrictedParameterization:
     norb: int
     nocc: int
     interaction_pairs: list[tuple[int, int]] | None = None
+    tau_indices_: list[tuple[int, int]] | None = None
     omega_indices_: list[tuple[int, int, int]] | None = None
+    eta_indices_: list[tuple[int, int]] | None = None
+    rho_indices_: list[tuple[int, int, int]] | None = None
     sigma_indices_: list[tuple[int, int, int, int]] | None = None
     general_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
     right_orbital_chart_override: object | None = None
@@ -451,19 +482,34 @@ class IGCR234SpinRestrictedParameterization:
         if not (0 <= self.nocc <= self.norb):
             raise ValueError("nocc must satisfy 0 <= nocc <= norb")
         _validate_pairs(self.interaction_pairs, self.norb, allow_diagonal=False)
+        _validate_ordered_pairs(self.tau_indices_, self.norb)
         _validate_triples(self.omega_indices_, self.norb)
+        _validate_pairs(self.eta_indices_, self.norb, allow_diagonal=False)
+        _validate_rho_indices(self.rho_indices_, self.norb)
         _validate_sigma_indices(self.sigma_indices_, self.norb)
 
     @property
-    def pair_indices(self) -> list[tuple[int, int]]:
+    def pair_indices(self):
         return _validate_pairs(self.interaction_pairs, self.norb, allow_diagonal=False)
 
     @property
-    def omega_indices(self) -> list[tuple[int, int, int]]:
+    def tau_indices(self):
+        return _validate_ordered_pairs(self.tau_indices_, self.norb)
+
+    @property
+    def omega_indices(self):
         return _validate_triples(self.omega_indices_, self.norb)
 
     @property
-    def sigma_indices(self) -> list[tuple[int, int, int, int]]:
+    def eta_indices(self):
+        return _validate_pairs(self.eta_indices_, self.norb, allow_diagonal=False)
+
+    @property
+    def rho_indices(self):
+        return _validate_rho_indices(self.rho_indices_, self.norb)
+
+    @property
+    def sigma_indices(self):
         return _validate_sigma_indices(self.sigma_indices_, self.norb)
 
     @property
@@ -475,41 +521,56 @@ class IGCR234SpinRestrictedParameterization:
         return IGCR2ReferenceOVUnitaryChart(self.nocc, self.norb - self.nocc)
 
     @property
-    def n_u1_params(self) -> int:
+    def n_u1_params(self):
         return self.general_orbital_chart.n_params(self.norb)
 
     @property
-    def n_pair_params(self) -> int:
+    def n_pair_params(self):
         return len(self.pair_indices)
 
     @property
-    def n_u2_params(self) -> int:
+    def n_u2_params(self):
         return self.general_orbital_chart.n_params(self.norb)
 
     @property
-    def n_omega_params(self) -> int:
+    def n_tau_params(self):
+        return len(self.tau_indices)
+
+    @property
+    def n_omega_params(self):
         return len(self.omega_indices)
 
     @property
-    def n_u3_params(self) -> int:
+    def n_u3_params(self):
         return self.general_orbital_chart.n_params(self.norb)
 
     @property
-    def n_sigma_params(self) -> int:
+    def n_eta_params(self):
+        return len(self.eta_indices)
+
+    @property
+    def n_rho_params(self):
+        return len(self.rho_indices)
+
+    @property
+    def n_sigma_params(self):
         return len(self.sigma_indices)
 
     @property
-    def n_u4_params(self) -> int:
+    def n_u4_params(self):
         return self.right_orbital_chart.n_params(self.norb)
 
     @property
-    def n_params(self) -> int:
+    def n_params(self):
         return (
             self.n_u1_params
             + self.n_pair_params
             + self.n_u2_params
+            + self.n_tau_params
             + self.n_omega_params
             + self.n_u3_params
+            + self.n_eta_params
+            + self.n_rho_params
             + self.n_sigma_params
             + self.n_u4_params
         )
@@ -519,9 +580,12 @@ class IGCR234SpinRestrictedParameterization:
             "u1": self.n_u1_params,
             "j": self.n_pair_params,
             "u2": self.n_u2_params,
-            "t": self.n_omega_params,
+            "tau": self.n_tau_params,
+            "omega": self.n_omega_params,
             "u3": self.n_u3_params,
-            "q": self.n_sigma_params,
+            "eta": self.n_eta_params,
+            "rho": self.n_rho_params,
+            "sigma": self.n_sigma_params,
             "u4": self.n_u4_params,
             "total": self.n_params,
         }
@@ -533,51 +597,64 @@ class IGCR234SpinRestrictedParameterization:
         idx = 0
 
         n = self.n_u1_params
-        u1 = self.general_orbital_chart.unitary_from_parameters(params[idx : idx + n], self.norb)
+        u1 = self.general_orbital_chart.unitary_from_parameters(params[idx: idx + n], self.norb)
         idx += n
 
         n = self.n_pair_params
-        pair_sparse_values = np.asarray(params[idx : idx + n], dtype=np.float64)
-        pair_sparse = _symmetric_matrix_from_values(pair_sparse_values, self.norb, self.pair_indices)
-        pair_values = np.asarray(
-            [pair_sparse[p, q] for p, q in _default_pair_indices(self.norb)],
-            dtype=np.float64,
-        )
+        pair_sparse = _symmetric_matrix_from_values(np.asarray(params[idx: idx + n], dtype=np.float64), self.norb, self.pair_indices)
+        pair_values = _pair_values_from_matrix(pair_sparse)
         idx += n
 
         n = self.n_u2_params
-        u2 = self.general_orbital_chart.unitary_from_parameters(params[idx : idx + n], self.norb)
+        u2 = self.general_orbital_chart.unitary_from_parameters(params[idx: idx + n], self.norb)
+        idx += n
+
+        n = self.n_tau_params
+        tau_values = _full_tau_values_from_sparse_values(np.asarray(params[idx: idx + n], dtype=np.float64), self.norb, self.tau_indices)
         idx += n
 
         n = self.n_omega_params
-        omega_sparse_values = np.asarray(params[idx : idx + n], dtype=np.float64)
-        omega_sparse = {triple: value for triple, value in zip(self.omega_indices, omega_sparse_values)}
-        omega_values = np.asarray(
-            [omega_sparse.get(triple, 0.0) for triple in _default_triple_indices(self.norb)],
-            dtype=np.float64,
+        omega_values = _vector_from_sparse_dict(
+            _default_triple_indices(self.norb),
+            _full_sparse_dict(np.asarray(params[idx: idx + n], dtype=np.float64), self.omega_indices),
         )
         idx += n
 
         n = self.n_u3_params
-        u3 = self.general_orbital_chart.unitary_from_parameters(params[idx : idx + n], self.norb)
+        u3 = self.general_orbital_chart.unitary_from_parameters(params[idx: idx + n], self.norb)
+        idx += n
+
+        n = self.n_eta_params
+        eta_values = _vector_from_sparse_dict(
+            _default_eta_indices(self.norb),
+            _full_sparse_dict(np.asarray(params[idx: idx + n], dtype=np.float64), self.eta_indices),
+        )
+        idx += n
+
+        n = self.n_rho_params
+        rho_values = _vector_from_sparse_dict(
+            _default_rho_indices(self.norb),
+            _full_sparse_dict(np.asarray(params[idx: idx + n], dtype=np.float64), self.rho_indices),
+        )
         idx += n
 
         n = self.n_sigma_params
-        sigma_sparse_values = np.asarray(params[idx : idx + n], dtype=np.float64)
-        sigma_sparse = {quad: value for quad, value in zip(self.sigma_indices, sigma_sparse_values)}
-        sigma_values = np.asarray(
-            [sigma_sparse.get(quad, 0.0) for quad in _default_sigma_indices(self.norb)],
-            dtype=np.float64,
+        sigma_values = _vector_from_sparse_dict(
+            _default_sigma_indices(self.norb),
+            _full_sparse_dict(np.asarray(params[idx: idx + n], dtype=np.float64), self.sigma_indices),
         )
         idx += n
 
         n = self.n_u4_params
-        u4 = self.right_orbital_chart.unitary_from_parameters(params[idx : idx + n], self.norb)
+        u4 = self.right_orbital_chart.unitary_from_parameters(params[idx: idx + n], self.norb)
 
         return IGCR234Ansatz(
             diagonal=IGCR234SpinRestrictedSpec(
                 pair_values=pair_values,
+                tau_values=tau_values,
                 omega_values=omega_values,
+                eta_values=eta_values,
+                rho_values=rho_values,
                 sigma_values=sigma_values,
             ),
             u1=u1,
@@ -590,98 +667,72 @@ class IGCR234SpinRestrictedParameterization:
     def parameters_from_ansatz(self, ansatz: IGCR234Ansatz) -> np.ndarray:
         if ansatz.norb != self.norb:
             raise ValueError("ansatz norb does not match parameterization")
-        pair = ansatz.diagonal.pair_matrix()
-        omega = {
-            idx: value for idx, value in zip(ansatz.diagonal.omega_indices, ansatz.diagonal.omega_vector())
-        }
-        sigma = {
-            idx: value for idx, value in zip(ansatz.diagonal.sigma_indices, ansatz.diagonal.sigma_vector())
-        }
+        d = ansatz.diagonal
+        pair = d.pair_matrix()
+        tau = d.tau_matrix()
+        omega = {idx: val for idx, val in zip(d.omega_indices, d.omega_vector())}
+        eta = {idx: val for idx, val in zip(d.eta_indices, d.eta_vector())}
+        rho = {idx: val for idx, val in zip(d.rho_indices, d.rho_vector())}
+        sigma = {idx: val for idx, val in zip(d.sigma_indices, d.sigma_vector())}
 
         out = np.zeros(self.n_params, dtype=np.float64)
         idx = 0
 
         n = self.n_u1_params
-        out[idx : idx + n] = self.general_orbital_chart.parameters_from_unitary(ansatz.u1)
+        out[idx: idx + n] = self.general_orbital_chart.parameters_from_unitary(ansatz.u1)
         idx += n
 
         n = self.n_pair_params
-        out[idx : idx + n] = np.asarray([pair[p, q] for p, q in self.pair_indices], dtype=np.float64)
+        out[idx: idx + n] = np.asarray([pair[p, q] for p, q in self.pair_indices], dtype=np.float64)
         idx += n
 
         n = self.n_u2_params
-        out[idx : idx + n] = self.general_orbital_chart.parameters_from_unitary(ansatz.u2)
+        out[idx: idx + n] = self.general_orbital_chart.parameters_from_unitary(ansatz.u2)
+        idx += n
+
+        n = self.n_tau_params
+        out[idx: idx + n] = np.asarray([tau[p, q] for p, q in self.tau_indices], dtype=np.float64)
         idx += n
 
         n = self.n_omega_params
-        out[idx : idx + n] = np.asarray(
-            [omega.get(triple, 0.0) for triple in self.omega_indices],
-            dtype=np.float64,
-        )
+        out[idx: idx + n] = np.asarray([omega.get(idx_, 0.0) for idx_ in self.omega_indices], dtype=np.float64)
         idx += n
 
         n = self.n_u3_params
-        out[idx : idx + n] = self.general_orbital_chart.parameters_from_unitary(ansatz.u3)
+        out[idx: idx + n] = self.general_orbital_chart.parameters_from_unitary(ansatz.u3)
+        idx += n
+
+        n = self.n_eta_params
+        out[idx: idx + n] = np.asarray([eta.get(idx_, 0.0) for idx_ in self.eta_indices], dtype=np.float64)
+        idx += n
+
+        n = self.n_rho_params
+        out[idx: idx + n] = np.asarray([rho.get(idx_, 0.0) for idx_ in self.rho_indices], dtype=np.float64)
         idx += n
 
         n = self.n_sigma_params
-        out[idx : idx + n] = np.asarray(
-            [sigma.get(quad, 0.0) for quad in self.sigma_indices],
-            dtype=np.float64,
-        )
+        out[idx: idx + n] = np.asarray([sigma.get(idx_, 0.0) for idx_ in self.sigma_indices], dtype=np.float64)
         idx += n
 
         n = self.n_u4_params
-        out[idx : idx + n] = self.right_orbital_chart.parameters_from_unitary(ansatz.u4)
+        out[idx: idx + n] = self.right_orbital_chart.parameters_from_unitary(ansatz.u4)
 
         return out
 
-    def parameters_from_igcr2_ansatz(
-        self,
-        ansatz: IGCR2Ansatz,
-        *,
-        omega_scale: float = 0.0,
-        sigma_scale: float = 0.0,
-    ) -> np.ndarray:
-        return self.parameters_from_ansatz(
-            IGCR234Ansatz.from_igcr2_ansatz(
-                ansatz,
-                omega_scale=omega_scale,
-                sigma_scale=sigma_scale,
-            )
-        )
+    def parameters_from_igcr2_ansatz(self, ansatz: IGCR2Ansatz, **kwargs) -> np.ndarray:
+        return self.parameters_from_ansatz(IGCR234Ansatz.from_igcr2_ansatz(ansatz, **kwargs))
 
-    def parameters_from_ucj_ansatz(
-        self,
-        ansatz: UCJAnsatz,
-        *,
-        omega_scale: float = 0.0,
-        sigma_scale: float = 0.0,
-    ) -> np.ndarray:
-        return self.parameters_from_ansatz(
-            IGCR234Ansatz.from_ucj_ansatz(
-                ansatz,
-                self.nocc,
-                omega_scale=omega_scale,
-                sigma_scale=sigma_scale,
-            )
-        )
+    def parameters_from_igcr3_ansatz(self, ansatz: IGCR3Ansatz, **kwargs) -> np.ndarray:
+        return self.parameters_from_ansatz(IGCR234Ansatz.from_igcr3_ansatz(ansatz, **kwargs))
 
-    def parameters_from_gcr_ansatz(
-        self,
-        ansatz: GCRAnsatz,
-        *,
-        omega_scale: float = 0.0,
-        sigma_scale: float = 0.0,
-    ) -> np.ndarray:
-        return self.parameters_from_ansatz(
-            IGCR234Ansatz.from_gcr_ansatz(
-                ansatz,
-                self.nocc,
-                omega_scale=omega_scale,
-                sigma_scale=sigma_scale,
-            )
-        )
+    def parameters_from_igcr4_ansatz(self, ansatz: IGCR4Ansatz) -> np.ndarray:
+        return self.parameters_from_ansatz(IGCR234Ansatz.from_igcr4_ansatz(ansatz))
+
+    def parameters_from_ucj_ansatz(self, ansatz: UCJAnsatz, **kwargs) -> np.ndarray:
+        return self.parameters_from_ansatz(IGCR234Ansatz.from_ucj_ansatz(ansatz, self.nocc, **kwargs))
+
+    def parameters_from_gcr_ansatz(self, ansatz: GCRAnsatz, **kwargs) -> np.ndarray:
+        return self.parameters_from_ansatz(IGCR234Ansatz.from_gcr_ansatz(ansatz, self.nocc, **kwargs))
 
     def params_to_vec(
         self,
