@@ -24,9 +24,9 @@ lib.num_threads(12)
 start, stop, step = 1.0, 3.5, 0.1
 bond_distance_range = np.linspace(start, stop, num=round((stop - start) / step) + 1)
 molecule = "h4"
-basis = "sto-6g"
-omega_scale = 0.25
-sigma_scale = 0.10
+basis = "6-31g"
+omega_scale = 0.00
+sigma_scale = 0.00
 
 OUT_CSV = Path(f"output/{molecule}_{basis}_igcr234_sr.csv")
 TRACE_CSV = Path(f"output/{molecule}_{basis}_igcr234_sr_trace.csv")
@@ -144,7 +144,7 @@ def main():
         ucj_seed = UCJRestrictedProjectedDFSeed(
             t2=ccsd.t2,
             t1=ccsd.t1,
-            n_reps=1,
+            n_reps=3,
         ).build_ansatz()
 
         igcr234_param = IGCR234SpinRestrictedParameterization(
@@ -209,10 +209,8 @@ def main():
             params_to_vec,
             H,
             x0=x0,
-            epsilon=1e-10,
             ftol=1e-12,
             gtol=1e-6,
-            tikhonov_target_cond=1e8,
             maxiter=300,
             callback=callback,
         )

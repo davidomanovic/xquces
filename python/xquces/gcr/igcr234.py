@@ -36,7 +36,9 @@ from xquces.gcr.igcr4 import (
 from xquces.gcr.model import GCRAnsatz
 from xquces.orbitals import apply_orbital_rotation
 from xquces.ucj.init import UCJRestrictedProjectedDFSeed
-from xquces.ucj.model import UCJAnsatz
+from xquces.ucj._unitary import GaugeFixedInternalUnitaryChart
+from xquces.ucj.model import SpinRestrictedSpec, UCJAnsatz
+from xquces.gcr.igcr2 import reduce_spin_restricted
 
 
 def _infer_norb_from_unique_pair_count(count: int) -> int:
@@ -64,6 +66,11 @@ def _infer_norb_from_unique_quadruple_count(count: int) -> int:
     if n * (n - 1) * (n - 2) * (n - 3) // 24 != count:
         raise ValueError("sigma_values has inconsistent length")
     return n
+
+def _irreducible_pair_from_diagonal(diagonal: SpinRestrictedSpec) -> np.ndarray:
+    if not isinstance(diagonal, SpinRestrictedSpec):
+        raise TypeError("expected a spin-restricted diagonal")
+    return reduce_spin_restricted(diagonal).pair
 
 
 @dataclass(frozen=True)
@@ -341,8 +348,73 @@ class IGCR234Ansatz:
         omega_scale: float = 0.0,
         sigma_scale: float = 0.0,
     ) -> "IGCR234Ansatz":
-        return cls.from_igcr2_ansatz(
-            IGCR2Ansatz.from_ucj_ansatz(ansatz, nocc=nocc),
+        if not ansatz.is_spin_restricted:
+            raise TypeError("iGCR234 is currently implemented only for spin-restricted seeds")
+
+        if ansatz.n_layers == 1:
+            return cls.from_igcr2_ansatz(
+                IGCR2Ansatz.from_ucj_ansatz(ansatz, nocc=nocc),
+                omega_scale=omega_scale,
+                sigma_scale=sigma_scale,
+            )
+
+        if ansatz.n_layers != 3:
+            raise ValueError("iGCR234 UCJ seeding currently expects either 1 or 3 layers")
+
+        layer_q = ansatz.layers[0]
+        layer_t = ansatz.layers[1]
+        layer_j = ansatz.layers[2]
+
+        final = ansatz.final_orbital_rotation
+        if final is None:
+            final = np.eye(ansatz.norb, dtype=np.complex128)
+
+        pair_j = _irreducible_pair_from_diagonal(layer_j.diagonal)
+        pair_t = _irreducible_pair_from_diagonal(layer_t.diagonal)
+        pair_q = _irreducible_pair_from_diagonal(layer_q.diagonal)
+
+        omega_values = spin_restricted_triples_seed_from_pair_params(
+            pair_t,
+            nocc,
+            tau_scale=0.0,
+            omega_scale=omega_scale,
+        )[1]
+
+        sigma_values = spin_restricted_quartic_seed_from_pair_params(
+            pair_q,
+            nocc,
+            eta_scale=0.0,
+            rho_scale=0.0,
+            sigma_scale=sigma_scale,
+        )[2]
+
+        diagonal = IGCR234SpinRestrictedSpec(
+            pair_values=np.asarray(
+                [pair_j[p, q] for p, q in _default_pair_indices(pair_j.shape[0])],
+                dtype=np.float64,
+            ),
+            omega_values=np.asarray(omega_values, dtype=np.float64),
+            sigma_values=np.asarray(sigma_values, dtype=np.float64),
+        )
+
+        return cls(
+            diagonal=diagonal,
+            u1=np.asarray(final @ layer_j.orbital_rotation, dtype=np.complex128),
+            u2=np.asarray(layer_j.orbital_rotation.conj().T @ layer_t.orbital_rotation, dtype=np.complex128),
+            u3=np.asarray(layer_t.orbital_rotation.conj().T @ layer_q.orbital_rotation, dtype=np.complex128),
+            u4=np.asarray(layer_q.orbital_rotation.conj().T, dtype=np.complex128),
+            nocc=nocc,
+        )
+
+    @classmethod
+    def from_t_restricted(cls, t2, **kwargs):
+        omega_scale = kwargs.pop("omega_scale", 0.0)
+        sigma_scale = kwargs.pop("sigma_scale", 0.0)
+        n_reps = kwargs.pop("n_reps", 3)
+        ucj = UCJRestrictedProjectedDFSeed(t2=t2, n_reps=n_reps, **kwargs).build_ansatz()
+        return cls.from_ucj_ansatz(
+            ucj,
+            nocc=t2.shape[0],
             omega_scale=omega_scale,
             sigma_scale=sigma_scale,
         )
@@ -359,18 +431,6 @@ class IGCR234Ansatz:
         return cls.from_ucj_ansatz(
             ansatz,
             nocc,
-            omega_scale=omega_scale,
-            sigma_scale=sigma_scale,
-        )
-
-    @classmethod
-    def from_t_restricted(cls, t2, **kwargs):
-        omega_scale = kwargs.pop("omega_scale", 0.0)
-        sigma_scale = kwargs.pop("sigma_scale", 0.0)
-        ucj = UCJRestrictedProjectedDFSeed(t2=t2, **kwargs).build_ansatz()
-        return cls.from_ucj_ansatz(
-            ucj,
-            nocc=t2.shape[0],
             omega_scale=omega_scale,
             sigma_scale=sigma_scale,
         )
