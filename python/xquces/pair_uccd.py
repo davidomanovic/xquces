@@ -42,6 +42,26 @@ def _pair_uccd_generator_basis(
     return tuple(generators)
 
 
+def pair_uccd_parameters_from_t2(
+    t2: np.ndarray,
+    *,
+    scale: float = 0.5,
+) -> np.ndarray:
+    t2 = np.asarray(t2)
+    if t2.ndim != 4:
+        raise ValueError("t2 must have shape (nocc, nocc, nvirt, nvirt)")
+    nocc_i, nocc_j, nvirt_a, nvirt_b = t2.shape
+    if nocc_i != nocc_j or nvirt_a != nvirt_b:
+        raise ValueError("t2 must have shape (nocc, nocc, nvirt, nvirt)")
+    out = np.zeros(nocc_i * nvirt_a, dtype=np.float64)
+    k = 0
+    for i in range(nocc_i):
+        for a in range(nvirt_a):
+            out[k] = float(scale) * float(np.real(t2[i, i, a, a]))
+            k += 1
+    return out
+
+
 def pair_uccd_generator_from_parameters(
     norb: int,
     nelec: tuple[int, int],
@@ -171,6 +191,12 @@ class PairUCCDStateParameterization:
     @property
     def n_params(self) -> int:
         return len(self.pair_indices)
+
+    def parameters_from_t2(self, t2: np.ndarray, *, scale: float = 0.5) -> np.ndarray:
+        params = pair_uccd_parameters_from_t2(t2, scale=scale)
+        if params.shape != (self.n_params,):
+            raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
+        return params
 
     def state_from_parameters(self, params: np.ndarray) -> np.ndarray:
         params = np.asarray(params, dtype=np.float64)
