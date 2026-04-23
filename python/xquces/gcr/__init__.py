@@ -32,6 +32,9 @@ from xquces.gcr.bridge_gcr2 import (
 from xquces.gcr.controlled_orbital_gcr2 import (
     GCR2SpectatorOrbitalAnsatz,
     GCR2SpectatorOrbitalParameterization,
+    GCR2TwoSpectatorOrbitalAnsatz,
+    GCR2TwoSpectatorOrbitalParameterization,
+    project_two_spectator_gauge,
 )
 from xquces.gcr.doci_reference_gcr2 import (
     GCR2DOCIReferenceAnsatz,
@@ -85,6 +88,9 @@ __all__ = [
     "GCR2UntiedSplitBridgeParameterization",
     "GCR2SpectatorOrbitalAnsatz",
     "GCR2SpectatorOrbitalParameterization",
+    "GCR2TwoSpectatorOrbitalAnsatz",
+    "GCR2TwoSpectatorOrbitalParameterization",
+    "project_two_spectator_gauge",
     "GCR2DOCIReferenceAnsatz",
     "GCR2DOCIReferenceParameterization",
     "GCR2NOCIReferenceAnsatz",

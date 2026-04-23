@@ -15,9 +15,9 @@ from scipy.optimize import minimize
 from scipy.sparse.linalg import eigsh
 from threadpoolctl import threadpool_limits
 
-from xquces.gcr import GCR2SpectatorOrbitalParameterization
+from xquces.gcr import GCR2SpectatorOrbitalParameterization, make_restricted_gcr_jacobian
 from xquces.gcr.igcr2 import orbital_relabeling_from_overlap
-from xquces.optimize import build_dense_hamiltonian, minimize_linear_method
+from xquces.optimize import build_dense_hamiltonian, make_state_objective, minimize_linear_method
 from xquces.ucj.init import UCJRestrictedProjectedDFSeed
 from xquces.utils import (
     active_hamiltonian_from_casscf,
@@ -35,8 +35,8 @@ from xquces.utils import (
 
 molecule = "n2"
 basis = "sto-6g"
-start = 0.80
-stop = 3.00
+start = 0.90
+stop = 3.50
 step = 0.10
 threads = 12
 dense_h_workers = threads
@@ -52,6 +52,7 @@ print_every = 1
 dense_threshold = 4096
 n_fci_roots = 1
 s2_tol = 1e-4
+spectator_seed_scale = 0.05
 lm_lindep = 1e-8
 lm_epsilon = 1e-7
 lm_regularization = 1e-4
@@ -143,7 +144,14 @@ def build_seed(
     parameterization: GCR2SpectatorOrbitalParameterization,
     ucj_ansatz,
 ) -> np.ndarray:
-    return np.asarray(parameterization.parameters_from_ucj_ansatz(ucj_ansatz), dtype=np.float64)
+    return np.asarray(
+        parameterization.parameters_from_ucj_ansatz(
+            ucj_ansatz,
+            initialize_spectator=True,
+            spectator_scale=spectator_seed_scale,
+        ),
+        dtype=np.float64,
+    )
 
 
 def continuation_seed(param, previous, fallback):
@@ -186,6 +194,8 @@ def optimize_with_linear_method(
 ):
     trace_header = ["R", "iter", "energy", "max_abs_grad"]
     params_to_vec = param.params_to_vec(phi0, nelec)
+    state_jacobian = make_restricted_gcr_jacobian(param, phi0, nelec)
+    fun, jac, cache = make_state_objective(params_to_vec, state_jacobian, hamiltonian)
     counter = {"value": 0}
 
     def callback(intermediate_result):
@@ -194,7 +204,11 @@ def optimize_with_linear_method(
             return
         energy = float(getattr(intermediate_result, "fun", np.nan))
         lm_jac = getattr(intermediate_result, "jac", None)
-        gmax = float(np.max(np.abs(lm_jac))) if lm_jac is not None else float("nan")
+        if lm_jac is None:
+            grad = cache["g"]
+            gmax = float(np.max(np.abs(grad))) if grad is not None else float("nan")
+        else:
+            gmax = float(np.max(np.abs(lm_jac)))
         append_row_csv(
             trace,
             {
@@ -217,18 +231,10 @@ def optimize_with_linear_method(
         params_to_vec,
         hamiltonian,
         x0=np.asarray(x0, dtype=np.float64),
-        jac=None,
+        jac=state_jacobian,
         maxiter=maxiter,
-        lindep=lm_lindep,
-        epsilon=lm_epsilon,
         ftol=ftol,
         gtol=gtol,
-        regularization=lm_regularization,
-        regularization_max=lm_regularization_max,
-        variation=lm_variation,
-        tikhonov=lm_tikhonov,
-        tikhonov_target_cond=lm_tikhonov_target_cond,
-        tikhonov_max=lm_tikhonov_max,
         callback=callback,
     )
 
@@ -257,7 +263,7 @@ def optimize_with_bfgs(
             trace,
             {
                 "R": f"{r:.8f}",
-                "iter": str(counter['value']),
+                "iter": str(counter["value"]),
                 "energy": f"{energy:.14f}",
             },
             trace_header,
@@ -374,7 +380,7 @@ def main() -> None:
                 seed_label = "continued"
             else:
                 x0 = np.asarray(x_seed, dtype=np.float64)
-                seed_label = "UCJ/iGCR2"
+                seed_label = "seeded-UCJ/iGCR2"
 
             print(
                 f"norb={norb} nelec={nelec} params={parameterization.n_params} (diag={parameterization.n_pair_params}, spectator={parameterization.n_spectator_params}, right={parameterization.n_right_orbital_rotation_params})",
