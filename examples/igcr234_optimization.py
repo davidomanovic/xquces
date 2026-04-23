@@ -25,8 +25,6 @@ start, stop, step = 1.0, 3.5, 0.1
 bond_distance_range = np.linspace(start, stop, num=round((stop - start) / step) + 1)
 molecule = "h4"
 basis = "6-31g"
-omega_scale = 0.00
-sigma_scale = 0.00
 
 OUT_CSV = Path(f"output/{molecule}_{basis}_igcr234_sr.csv")
 TRACE_CSV = Path(f"output/{molecule}_{basis}_igcr234_sr_trace.csv")
@@ -152,11 +150,7 @@ def main():
             nocc=n_alpha,
         )
 
-        x0_seed = igcr234_param.parameters_from_ucj_ansatz(
-            ucj_seed,
-            omega_scale=omega_scale,
-            sigma_scale=sigma_scale,
-        )
+        x0_seed = igcr234_param.parameters_from_ucj_ansatz(ucj_seed)
 
         if x_prev1 is not None and x_prev1.shape == x0_seed.shape:
             x0 = x_prev1
