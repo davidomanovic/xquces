@@ -252,7 +252,7 @@ def make_spectator_orbital_gcr_jacobian(
     left_chart = base._left_orbital_chart
     right_chart = base.right_orbital_chart
     left_basis = _left_chart_basis(left_chart, norb)
-    right_basis = _right_chart_basis(right_chart)
+    right_basis = _right_chart_basis(right_chart, norb)
     tensor_a = _one_body_tensor(norb, nelec[0])
     tensor_b = _one_body_tensor(norb, nelec[1])
     reference_mat = reshape_state(np.asarray(reference_vec, dtype=np.complex128), norb, nelec)
