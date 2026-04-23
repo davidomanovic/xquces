@@ -9,10 +9,22 @@ from xquces.gcr.igcr2 import IGCR2LeftUnitaryChart, IGCR2SpinRestrictedParameter
 from xquces.gcr.igcr3 import IGCR3SpinRestrictedParameterization
 from xquces.gcr.igcr4 import IGCR4SpinRestrictedParameterization
 from xquces.pair_uccd import PairUCCDStateParameterization
-from xquces.state_parameterization import (
-    CompositeReferenceAnsatzParameterization,
-    make_composite_reference_ansatz_jacobian,
-)
+
+
+def _make_composite(reference_parameterization, ansatz_parameterization, nelec):
+    from xquces.state_parameterization import CompositeReferenceAnsatzParameterization
+
+    return CompositeReferenceAnsatzParameterization(
+        reference_parameterization,
+        ansatz_parameterization,
+        nelec,
+    )
+
+
+def _make_composite_jacobian(composite):
+    from xquces.state_parameterization import make_composite_reference_ansatz_jacobian
+
+    return make_composite_reference_ansatz_jacobian(composite)
 
 
 @dataclass(frozen=True)
@@ -45,8 +57,8 @@ class GCR2PairUCCDParameterization:
         )
 
     @property
-    def _composite(self) -> CompositeReferenceAnsatzParameterization:
-        return CompositeReferenceAnsatzParameterization(
+    def _composite(self):
+        return _make_composite(
             self.reference_parameterization,
             self.ansatz_parameterization,
             (self.nocc, self.nocc),
@@ -89,7 +101,7 @@ class GCR2PairUCCDParameterization:
         return self._composite.state_from_parameters(params)
 
     def state_jacobian_from_parameters(self, params: np.ndarray) -> np.ndarray:
-        return make_composite_reference_ansatz_jacobian(self._composite)(params)
+        return _make_composite_jacobian(self._composite)(params)
 
     def params_to_vec(self) -> Callable[[np.ndarray], np.ndarray]:
         return self._composite.params_to_vec()
@@ -112,8 +124,8 @@ class GCR3PairUCCDParameterization:
         return IGCR3SpinRestrictedParameterization(self.norb, self.nocc)
 
     @property
-    def _composite(self) -> CompositeReferenceAnsatzParameterization:
-        return CompositeReferenceAnsatzParameterization(
+    def _composite(self):
+        return _make_composite(
             self.reference_parameterization,
             self.ansatz_parameterization,
             (self.nocc, self.nocc),
@@ -156,7 +168,7 @@ class GCR3PairUCCDParameterization:
         return self._composite.state_from_parameters(params)
 
     def state_jacobian_from_parameters(self, params: np.ndarray) -> np.ndarray:
-        return make_composite_reference_ansatz_jacobian(self._composite)(params)
+        return _make_composite_jacobian(self._composite)(params)
 
     def params_to_vec(self) -> Callable[[np.ndarray], np.ndarray]:
         return self._composite.params_to_vec()
@@ -179,8 +191,8 @@ class GCR4PairUCCDParameterization:
         return IGCR4SpinRestrictedParameterization(self.norb, self.nocc)
 
     @property
-    def _composite(self) -> CompositeReferenceAnsatzParameterization:
-        return CompositeReferenceAnsatzParameterization(
+    def _composite(self):
+        return _make_composite(
             self.reference_parameterization,
             self.ansatz_parameterization,
             (self.nocc, self.nocc),
@@ -223,7 +235,7 @@ class GCR4PairUCCDParameterization:
         return self._composite.state_from_parameters(params)
 
     def state_jacobian_from_parameters(self, params: np.ndarray) -> np.ndarray:
-        return make_composite_reference_ansatz_jacobian(self._composite)(params)
+        return _make_composite_jacobian(self._composite)(params)
 
     def params_to_vec(self) -> Callable[[np.ndarray], np.ndarray]:
         return self._composite.params_to_vec()
