@@ -11,6 +11,14 @@ from xquces.agp import (
     agp_state,
     agp_state_jacobian,
 )
+from xquces.pair_uccd import (
+    PairUCCDStateParameterization,
+    apply_pair_uccd_reference_global,
+    pair_uccd_generator_from_parameters,
+    pair_uccd_state,
+    pair_uccd_state_jacobian,
+    pair_uccd_unitary_from_parameters,
+)
 from xquces.states import (
     apply_doci_unitary,
     determinant_index,
@@ -37,7 +45,10 @@ from xquces.sqd import run_sqd_from_statevector
 from xquces.gcr import (
     GCR2DOCIReferenceParameterization,
     GCR2NOCIReferenceParameterization,
+    GCR2PairUCCDParameterization,
     GCR2SpectatorOrbitalParameterization,
+    GCR3PairUCCDParameterization,
+    GCR4PairUCCDParameterization,
     GCRAnsatz,
     GCRSpinBalancedParameterization,
     GCRSpinRestrictedParameterization,
@@ -48,7 +59,6 @@ from xquces.gcr import (
     gcr_from_ucj_ansatz,
 )
 from xquces.gcr.init import GaugeFixedGCRBalancedDFSeed
-
 from xquces.ucj._unitary import (
     AntiHermitianUnitaryChart,
     antihermitian_from_parameters,
@@ -96,12 +106,18 @@ __all__ = [
     "agp_amplitudes_jacobian_from_parameters",
     "agp_eta_from_amplitudes",
     "agp_parameters_from_amplitudes",
+    "pair_uccd_generator_from_parameters",
+    "pair_uccd_unitary_from_parameters",
+    "apply_pair_uccd_reference_global",
+    "pair_uccd_state",
+    "pair_uccd_state_jacobian",
     "determinant_index",
     "determinant_state",
     "linear_combination_state",
     "open_shell_singlet_state",
     "DOCIStateParameterization",
     "AGPStateParameterization",
+    "PairUCCDStateParameterization",
     "CompositeReferenceAnsatzParameterization",
     "make_composite_reference_ansatz_jacobian",
     "MolecularHamiltonianLinearOperator",
@@ -111,6 +127,9 @@ __all__ = [
     "GCRSpinRestrictedParameterization",
     "GCR2DOCIReferenceParameterization",
     "GCR2NOCIReferenceParameterization",
+    "GCR2PairUCCDParameterization",
+    "GCR3PairUCCDParameterization",
+    "GCR4PairUCCDParameterization",
     "GCR2SpectatorOrbitalParameterization",
     "gcr_from_ucj_ansatz",
     "AntiHermitianUnitaryChart",
