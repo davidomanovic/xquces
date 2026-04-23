@@ -34,9 +34,9 @@ class GCR2PairUCCDParameterization:
     interaction_pairs: list[tuple[int, int]] | None = None
     base_parameterization: IGCR2SpinRestrictedParameterization | None = None
     left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
-    right_orbital_chart_override: object | None = None
+    right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
     real_right_orbital_chart: bool = False
-    left_right_ov_relative_scale: float | None = 1.0
+    left_right_ov_relative_scale: float | None = None
 
     @property
     def reference_parameterization(self) -> PairUCCDStateParameterization:
@@ -112,6 +112,10 @@ class GCR3PairUCCDParameterization:
     norb: int
     nocc: int
     base_parameterization: IGCR3SpinRestrictedParameterization | None = None
+    left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
+    right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
+    real_right_orbital_chart: bool = False
+    left_right_ov_relative_scale: float | None = None
 
     @property
     def reference_parameterization(self) -> PairUCCDStateParameterization:
@@ -121,7 +125,14 @@ class GCR3PairUCCDParameterization:
     def ansatz_parameterization(self) -> IGCR3SpinRestrictedParameterization:
         if self.base_parameterization is not None:
             return self.base_parameterization
-        return IGCR3SpinRestrictedParameterization(self.norb, self.nocc)
+        return IGCR3SpinRestrictedParameterization(
+            self.norb,
+            self.nocc,
+            left_orbital_chart=self.left_orbital_chart,
+            right_orbital_chart_override=self.right_orbital_chart_override,
+            real_right_orbital_chart=self.real_right_orbital_chart,
+            left_right_ov_relative_scale=self.left_right_ov_relative_scale,
+        )
 
     @property
     def _composite(self):
@@ -179,6 +190,10 @@ class GCR4PairUCCDParameterization:
     norb: int
     nocc: int
     base_parameterization: IGCR4SpinRestrictedParameterization | None = None
+    left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
+    right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
+    real_right_orbital_chart: bool = False
+    left_right_ov_relative_scale: float | None = None
 
     @property
     def reference_parameterization(self) -> PairUCCDStateParameterization:
@@ -188,7 +203,14 @@ class GCR4PairUCCDParameterization:
     def ansatz_parameterization(self) -> IGCR4SpinRestrictedParameterization:
         if self.base_parameterization is not None:
             return self.base_parameterization
-        return IGCR4SpinRestrictedParameterization(self.norb, self.nocc)
+        return IGCR4SpinRestrictedParameterization(
+            self.norb,
+            self.nocc,
+            left_orbital_chart=self.left_orbital_chart,
+            right_orbital_chart_override=self.right_orbital_chart_override,
+            real_right_orbital_chart=self.real_right_orbital_chart,
+            left_right_ov_relative_scale=self.left_right_ov_relative_scale,
+        )
 
     @property
     def _composite(self):
