@@ -47,6 +47,7 @@ from xquces.gcr.pair_uccd_reference import (
     GCR3PairUCCDParameterization,
     GCR4PairUCCDParameterization,
 )
+from xquces.gcr.product_pair_uccd_reference import GCR2ProductPairUCCDParameterization
 from xquces.gcr.noci_reference_gcr2 import (
     GCR2NOCIReferenceAnsatz,
     GCR2NOCIReferenceParameterization,
@@ -101,6 +102,7 @@ __all__ = [
     "GCR2DOCIReferenceAnsatz",
     "GCR2DOCIReferenceParameterization",
     "GCR2PairUCCDParameterization",
+    "GCR2ProductPairUCCDParameterization",
     "GCR3PairUCCDParameterization",
     "GCR4PairUCCDParameterization",
     "GCR2NOCIReferenceAnsatz",
