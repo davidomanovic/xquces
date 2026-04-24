@@ -42,6 +42,60 @@ def _pair_uccd_generator_basis(
     return tuple(generators)
 
 
+@cache
+def _pair_uccd_rotation_blocks(
+    norb: int,
+    nelec: tuple[int, int],
+) -> tuple[tuple[tuple[int, int], ...], ...]:
+    if nelec[0] != nelec[1]:
+        raise ValueError("Pair-UCCD reference requires n_alpha == n_beta")
+    npair = nelec[0]
+    basis = _doci_spatial_basis(norb, npair)
+    basis_index = {occ: i for i, occ in enumerate(basis)}
+    all_blocks: list[tuple[tuple[int, int], ...]] = []
+    for i, a in _pair_uccd_ov_pairs(norb, npair):
+        blocks: list[tuple[int, int]] = []
+        for left, occ in enumerate(basis):
+            occ_set = set(occ)
+            if i in occ_set and a not in occ_set:
+                target = tuple(sorted((occ_set - {i}) | {a}))
+                blocks.append((left, basis_index[target]))
+        all_blocks.append(tuple(blocks))
+    return tuple(all_blocks)
+
+
+def _apply_pair_rotation_blocks_in_place(
+    coeffs: np.ndarray,
+    blocks: tuple[tuple[int, int], ...],
+    theta: float,
+) -> None:
+    if theta == 0.0:
+        return
+    c = float(np.cos(theta))
+    s = float(np.sin(theta))
+    for left, right in blocks:
+        x = coeffs[left]
+        y = coeffs[right]
+        coeffs[left] = c * x - s * y
+        coeffs[right] = s * x + c * y
+
+
+def _apply_pair_rotation_blocks_to_matrix_in_place(
+    mat: np.ndarray,
+    blocks: tuple[tuple[int, int], ...],
+    theta: float,
+) -> None:
+    if theta == 0.0:
+        return
+    c = float(np.cos(theta))
+    s = float(np.sin(theta))
+    for left, right in blocks:
+        x = np.array(mat[left], copy=True)
+        y = np.array(mat[right], copy=True)
+        mat[left] = c * x - s * y
+        mat[right] = s * x + c * y
+
+
 def pair_uccd_parameters_from_t2(
     t2: np.ndarray,
     *,
@@ -92,6 +146,25 @@ def pair_uccd_unitary_from_parameters(
     return np.asarray(scipy.linalg.expm(generator), dtype=np.complex128)
 
 
+def product_pair_uccd_unitary_from_parameters(
+    norb: int,
+    nelec: tuple[int, int],
+    params: np.ndarray,
+    *,
+    time: float = 1.0,
+) -> np.ndarray:
+    params = np.asarray(params, dtype=np.float64)
+    blocks = _pair_uccd_rotation_blocks(norb, nelec)
+    expected = len(blocks)
+    if params.shape != (expected,):
+        raise ValueError(f"Expected {(expected,)}, got {params.shape}.")
+    dim = len(_doci_spatial_basis(norb, nelec[0]))
+    out = np.eye(dim, dtype=np.complex128)
+    for theta, pair_blocks in zip(time * params, blocks):
+        _apply_pair_rotation_blocks_to_matrix_in_place(out, pair_blocks, float(theta))
+    return out
+
+
 def apply_pair_uccd_reference_global(
     vec: np.ndarray,
     reference_params: np.ndarray,
@@ -121,6 +194,31 @@ def apply_pair_uccd_reference_global(
     return out
 
 
+def apply_product_pair_uccd_reference_global(
+    vec: np.ndarray,
+    reference_params: np.ndarray,
+    norb: int,
+    nelec: tuple[int, int],
+    *,
+    time: float = 1.0,
+    copy: bool = True,
+) -> np.ndarray:
+    params = np.asarray(reference_params, dtype=np.float64)
+    blocks = _pair_uccd_rotation_blocks(norb, nelec)
+    expected = len(blocks)
+    if params.shape != (expected,):
+        raise ValueError(f"Expected {(expected,)}, got {params.shape}.")
+    out = np.array(vec, dtype=np.complex128, copy=copy)
+    indices = np.asarray(_doci_subspace_indices(norb, nelec), dtype=np.uintp)
+    if indices.size == 0:
+        return out
+    coeffs = np.array(out[indices], dtype=np.complex128, copy=True)
+    for theta, pair_blocks in zip(time * params, blocks):
+        _apply_pair_rotation_blocks_in_place(coeffs, pair_blocks, float(theta))
+    out[indices] = coeffs
+    return out
+
+
 def pair_uccd_state(
     norb: int,
     nelec: tuple[int, int],
@@ -134,6 +232,28 @@ def pair_uccd_state(
         params = np.zeros(len(_pair_uccd_ov_pairs(norb, nelec[0])), dtype=np.float64)
     reference = hartree_fock_state(norb, nelec)
     return apply_pair_uccd_reference_global(
+        reference,
+        np.asarray(params, dtype=np.float64),
+        norb,
+        nelec,
+        time=time,
+        copy=True,
+    )
+
+
+def product_pair_uccd_state(
+    norb: int,
+    nelec: tuple[int, int],
+    *,
+    params: np.ndarray | None = None,
+    time: float = 1.0,
+) -> np.ndarray:
+    if nelec[0] != nelec[1]:
+        raise ValueError("Pair-UCCD reference requires n_alpha == n_beta")
+    if params is None:
+        params = np.zeros(len(_pair_uccd_ov_pairs(norb, nelec[0])), dtype=np.float64)
+    reference = hartree_fock_state(norb, nelec)
+    return apply_product_pair_uccd_reference_global(
         reference,
         np.asarray(params, dtype=np.float64),
         norb,
@@ -175,6 +295,43 @@ def pair_uccd_state_jacobian(
     return out
 
 
+def product_pair_uccd_state_jacobian(
+    norb: int,
+    nelec: tuple[int, int],
+    params: np.ndarray,
+    *,
+    time: float = 1.0,
+) -> np.ndarray:
+    if nelec[0] != nelec[1]:
+        raise ValueError("Pair-UCCD reference requires n_alpha == n_beta")
+    params = np.asarray(params, dtype=np.float64)
+    generators = _pair_uccd_generator_basis(norb, nelec)
+    blocks = _pair_uccd_rotation_blocks(norb, nelec)
+    expected = len(blocks)
+    if params.shape != (expected,):
+        raise ValueError(f"Expected {(expected,)}, got {params.shape}.")
+    indices = _doci_subspace_indices(norb, nelec)
+    full_dim = hartree_fock_state(norb, nelec).size
+    doci_dim = len(indices)
+    e0 = np.zeros(doci_dim, dtype=np.complex128)
+    if doci_dim:
+        e0[0] = 1.0
+    forward: list[np.ndarray] = [e0]
+    current = np.array(e0, copy=True)
+    for theta, pair_blocks in zip(time * params, blocks):
+        current = np.array(current, copy=True)
+        _apply_pair_rotation_blocks_in_place(current, pair_blocks, float(theta))
+        forward.append(current)
+    out = np.zeros((full_dim, expected), dtype=np.complex128)
+    for k in range(expected):
+        vec = time * (generators[k] @ forward[k + 1])
+        vec = np.asarray(vec, dtype=np.complex128)
+        for theta, pair_blocks in zip(time * params[k + 1 :], blocks[k + 1 :]):
+            _apply_pair_rotation_blocks_in_place(vec, pair_blocks, float(theta))
+        out[indices, k] = vec
+    return out
+
+
 @dataclass(frozen=True)
 class PairUCCDStateParameterization:
     norb: int
@@ -209,6 +366,48 @@ class PairUCCDStateParameterization:
         if params.shape != (self.n_params,):
             raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
         return pair_uccd_state_jacobian(self.norb, self.nelec, params)
+
+    def params_to_state(self) -> Callable[[np.ndarray], np.ndarray]:
+        def func(params: np.ndarray) -> np.ndarray:
+            return self.state_from_parameters(params)
+
+        return func
+
+
+@dataclass(frozen=True)
+class ProductPairUCCDStateParameterization:
+    norb: int
+    nelec: tuple[int, int]
+
+    def __post_init__(self):
+        if self.nelec[0] != self.nelec[1]:
+            raise ValueError("Product pair-UCCD reference requires n_alpha == n_beta")
+
+    @property
+    def pair_indices(self) -> tuple[tuple[int, int], ...]:
+        return _pair_uccd_ov_pairs(self.norb, self.nelec[0])
+
+    @property
+    def n_params(self) -> int:
+        return len(self.pair_indices)
+
+    def parameters_from_t2(self, t2: np.ndarray, *, scale: float = 0.5) -> np.ndarray:
+        params = pair_uccd_parameters_from_t2(t2, scale=scale)
+        if params.shape != (self.n_params,):
+            raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
+        return params
+
+    def state_from_parameters(self, params: np.ndarray) -> np.ndarray:
+        params = np.asarray(params, dtype=np.float64)
+        if params.shape != (self.n_params,):
+            raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
+        return product_pair_uccd_state(self.norb, self.nelec, params=params)
+
+    def state_jacobian_from_parameters(self, params: np.ndarray) -> np.ndarray:
+        params = np.asarray(params, dtype=np.float64)
+        if params.shape != (self.n_params,):
+            raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
+        return product_pair_uccd_state_jacobian(self.norb, self.nelec, params)
 
     def params_to_state(self) -> Callable[[np.ndarray], np.ndarray]:
         def func(params: np.ndarray) -> np.ndarray:
