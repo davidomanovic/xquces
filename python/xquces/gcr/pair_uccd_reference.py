@@ -55,6 +55,50 @@ def _combined_seed(reference_params: np.ndarray, ansatz_params: np.ndarray) -> n
     ])
 
 
+def _transfer_reference_params(self, prev_reference, previous_parameterization, old_for_new, phases):
+    del phases
+    out = np.zeros(self.n_reference_params, dtype=np.float64)
+    if (
+        not hasattr(previous_parameterization, "reference_parameterization")
+        or not hasattr(previous_parameterization, "pair_reference_indices")
+        or previous_parameterization.norb != self.norb
+        or previous_parameterization.nocc != self.nocc
+        or type(previous_parameterization.reference_parameterization) is not type(self.reference_parameterization)
+        or previous_parameterization.reference_parameterization.n_params != self.n_reference_params
+    ):
+        return out
+
+    prev_reference = np.asarray(prev_reference, dtype=np.float64)
+    if old_for_new is None:
+        if getattr(previous_parameterization, "pair_reference_indices", None) == getattr(self, "pair_reference_indices", None):
+            return np.array(prev_reference, copy=True)
+        return out
+
+    prev_by_pair = {
+        tuple(pair): float(value)
+        for pair, value in zip(previous_parameterization.pair_reference_indices, prev_reference)
+    }
+    transferred = np.zeros(self.n_reference_params, dtype=np.float64)
+    for k, pair in enumerate(self.pair_reference_indices):
+        old_pair = tuple(int(old_for_new[p]) for p in pair)
+        if old_pair not in prev_by_pair:
+            return out
+        transferred[k] = prev_by_pair[old_pair]
+    return transferred
+
+
+def _is_trivial_relabel(norb: int, old_for_new, phases) -> bool:
+    if old_for_new is None:
+        return phases is None
+    old_for_new = np.asarray(old_for_new, dtype=np.int64)
+    if old_for_new.shape != (norb,) or not np.array_equal(old_for_new, np.arange(norb)):
+        return False
+    if phases is None:
+        return True
+    phases = np.asarray(phases, dtype=np.complex128)
+    return phases.shape == (norb,) and np.allclose(phases, np.ones(norb, dtype=np.complex128), atol=1e-10)
+
+
 def _transfer_params(self, previous_parameters, previous_parameterization, old_for_new, phases, orbital_overlap, block_diagonal):
     if previous_parameterization is None:
         previous_parameterization = self
@@ -66,18 +110,29 @@ def _transfer_params(self, previous_parameters, previous_parameterization, old_f
             nocc=self.nocc,
             block_diagonal=block_diagonal,
         )
-    if isinstance(previous_parameterization, type(self)):
-        prev = np.asarray(previous_parameters, dtype=np.float64)
+    prev = np.asarray(previous_parameters, dtype=np.float64)
+    reference_params = np.zeros(self.n_reference_params, dtype=np.float64)
+
+    if hasattr(previous_parameterization, "split_parameters") and hasattr(previous_parameterization, "ansatz_parameterization"):
         if prev.shape != (previous_parameterization.n_params,):
             raise ValueError(f"Expected {(previous_parameterization.n_params,)}, got {prev.shape}.")
         if (
-            previous_parameterization.norb == self.norb
+            isinstance(previous_parameterization, type(self))
+            and previous_parameterization.norb == self.norb
             and previous_parameterization.nocc == self.nocc
-            and old_for_new is None
-            and phases is None
+            and _is_trivial_relabel(self.norb, old_for_new, phases)
         ):
             return np.array(prev, copy=True)
-        _, prev_ansatz = previous_parameterization.split_parameters(prev)
+
+        prev_reference, prev_ansatz = previous_parameterization.split_parameters(prev)
+        reference_params = _transfer_reference_params(
+            self,
+            prev_reference,
+            previous_parameterization,
+            old_for_new,
+            phases,
+        )
+
         ansatz_params = self.ansatz_parameterization.transfer_parameters_from(
             prev_ansatz,
             previous_parameterization=previous_parameterization.ansatz_parameterization,
@@ -87,11 +142,12 @@ def _transfer_params(self, previous_parameters, previous_parameterization, old_f
             block_diagonal=block_diagonal,
         )
         return np.concatenate([
-            np.zeros(self.n_reference_params, dtype=np.float64),
+            reference_params,
             np.asarray(ansatz_params, dtype=np.float64),
         ])
+
     ansatz_params = self.ansatz_parameterization.transfer_parameters_from(
-        previous_parameters,
+        prev,
         previous_parameterization=previous_parameterization,
         old_for_new=old_for_new,
         phases=phases,
@@ -99,7 +155,7 @@ def _transfer_params(self, previous_parameters, previous_parameterization, old_f
         block_diagonal=block_diagonal,
     )
     return np.concatenate([
-        np.zeros(self.n_reference_params, dtype=np.float64),
+        reference_params,
         np.asarray(ansatz_params, dtype=np.float64),
     ])
 

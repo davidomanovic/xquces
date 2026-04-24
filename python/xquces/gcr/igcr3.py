@@ -28,6 +28,7 @@ from xquces.gcr.igcr2 import (
     _symmetric_matrix_from_values,
     _validate_pairs,
     orbital_relabeling_from_overlap,
+    relabel_igcr2_ansatz_orbitals,
     reduce_spin_restricted,
 )
 from xquces.orbitals import apply_orbital_rotation
@@ -989,8 +990,17 @@ class IGCR3SpinRestrictedParameterization:
                 block_diagonal=block_diagonal,
             )
         if old_for_new is not None:
-            ansatz = relabel_igcr3_ansatz_orbitals(ansatz, old_for_new, phases)
-        return self.parameters_from_ansatz(ansatz)
+            if isinstance(ansatz, IGCR3Ansatz):
+                ansatz = relabel_igcr3_ansatz_orbitals(ansatz, old_for_new, phases)
+            elif isinstance(ansatz, IGCR2Ansatz):
+                ansatz = relabel_igcr2_ansatz_orbitals(ansatz, old_for_new, phases)
+            else:
+                raise TypeError(f"Unsupported ansatz type for transfer: {type(ansatz)!r}")
+        if isinstance(ansatz, IGCR3Ansatz):
+            return self.parameters_from_ansatz(ansatz)
+        if isinstance(ansatz, IGCR2Ansatz):
+            return self.parameters_from_igcr2_ansatz(ansatz)
+        raise TypeError(f"Unsupported ansatz type for transfer: {type(ansatz)!r}")
 
     def params_to_vec(self, reference_vec: np.ndarray, nelec: tuple[int, int]) -> Callable[[np.ndarray], np.ndarray]:
         reference_vec = np.asarray(reference_vec, dtype=np.complex128)
