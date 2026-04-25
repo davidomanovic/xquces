@@ -46,6 +46,7 @@ from xquces.gcr.pair_uccd_reference import (
     GCR2PairUCCDParameterization,
     GCR3PairUCCDParameterization,
     GCR4PairUCCDParameterization,
+    HigherOrderLiftSeed,
 )
 from xquces.gcr.product_pair_uccd_reference import (
     GCR2ProductPairUCCDParameterization,
@@ -110,6 +111,7 @@ __all__ = [
     "GCR3PairUCCDParameterization",
     "GCR3ProductPairUCCDParameterization",
     "GCR4PairUCCDParameterization",
+    "HigherOrderLiftSeed",
     "GCR4ProductPairUCCDParameterization",
     "GCR2NOCIReferenceAnsatz",
     "GCR2NOCIReferenceParameterization",

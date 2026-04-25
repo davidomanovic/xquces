@@ -61,6 +61,7 @@ from xquces.gcr import (
     GCRAnsatz,
     GCRSpinBalancedParameterization,
     GCRSpinRestrictedParameterization,
+    HigherOrderLiftSeed,
     IGCR23Ansatz,
     IGCR23SpinRestrictedParameterization,
     IGCR234Ansatz,
@@ -89,6 +90,24 @@ from xquces.ucj.parameterization import (
     UCJSpinRestrictedParameterization,
 )
 from xquces.optimize.linear_method import minimize_linear_method
+from xquces.optimize.subspace_linear_method import (
+    gradient_coordinate_subspace,
+    minimize_subspace_linear_method,
+)
+from xquces.continuation import (
+    GCR2ForwardOptimizer,
+    GCR2OptimizationResult,
+    MolecularContinuationPoint,
+    MolecularForwardContinuator,
+    OrbitalTracker,
+    OrbitalTrackingDiagnostics,
+    RCCSDContinuation,
+    dense_matrix_from_linear_operator,
+    exact_ground_energy,
+    make_ffsim_molecular_data,
+    projector_shifted_operator,
+    track_occ_virt_orbitals,
+)
 from xquces.gcr.igcr2 import IGCR2SpinRestrictedParameterization
 from xquces.gcr.igcr3 import IGCR3SpinRestrictedParameterization
 from xquces.gcr.igcr4 import IGCR4SpinRestrictedParameterization
@@ -149,6 +168,7 @@ __all__ = [
     "GCR4PairUCCDParameterization",
     "GCR4ProductPairUCCDParameterization",
     "GCR2SpectatorOrbitalParameterization",
+    "HigherOrderLiftSeed",
     "gcr_from_ucj_ansatz",
     "AntiHermitianUnitaryChart",
     "antihermitian_from_parameters",
@@ -174,7 +194,21 @@ __all__ = [
     "IGCR4SpinRestrictedParameterization",
     "IGCR234Ansatz",
     "IGCR234SpinRestrictedParameterization",
+    "gradient_coordinate_subspace",
     "minimize_linear_method",
+    "minimize_subspace_linear_method",
+    "GCR2ForwardOptimizer",
+    "GCR2OptimizationResult",
+    "MolecularContinuationPoint",
+    "MolecularForwardContinuator",
+    "OrbitalTracker",
+    "OrbitalTrackingDiagnostics",
+    "RCCSDContinuation",
+    "dense_matrix_from_linear_operator",
+    "exact_ground_energy",
+    "make_ffsim_molecular_data",
+    "projector_shifted_operator",
+    "track_occ_virt_orbitals",
     "apply_spin_square",
     "spin_square",
 ]

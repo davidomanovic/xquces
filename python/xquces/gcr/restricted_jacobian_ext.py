@@ -33,6 +33,7 @@ from xquces.gcr.restricted_jacobian import (
     _right_chart_kappa,
     _sector_representation,
     make_restricted_gcr_jacobian as _base_make_restricted_gcr_jacobian,
+    make_restricted_gcr_subspace_jacobian as _base_make_restricted_gcr_subspace_jacobian,
 )
 from xquces.orbitals import apply_orbital_rotation
 
@@ -467,4 +468,19 @@ def make_restricted_gcr_jacobian(parameterization, reference_vec: np.ndarray, ne
     return _base_make_restricted_gcr_jacobian(parameterization, reference_vec, nelec)
 
 
-__all__ = ["make_restricted_gcr_jacobian"]
+def make_restricted_gcr_subspace_jacobian(
+    parameterization,
+    reference_vec: np.ndarray,
+    nelec: tuple[int, int],
+):
+    return _base_make_restricted_gcr_subspace_jacobian(
+        parameterization,
+        reference_vec,
+        nelec,
+    )
+
+
+__all__ = [
+    "make_restricted_gcr_jacobian",
+    "make_restricted_gcr_subspace_jacobian",
+]

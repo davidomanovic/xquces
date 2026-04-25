@@ -21,6 +21,10 @@ from xquces.optimize.metric_bfgs import (
     tangent_metric_preconditioner,
     tangent_svd_preconditioner,
 )
+from xquces.optimize.subspace_linear_method import (
+    gradient_coordinate_subspace,
+    minimize_subspace_linear_method,
+)
 from xquces.optimize.trust_region import minimize_tangent_trust_region
 
 __all__ = [
@@ -33,12 +37,14 @@ __all__ = [
     "minimize_bfgs",
     "minimize_linear_method",
     "minimize_metric_bfgs",
+    "minimize_subspace_linear_method",
     "minimize_svd_metric_bfgs",
     "minimize_tangent_trust_region",
     "real_jacobian",
     "sector_residual_projections",
     "state_energy_gradient",
     "TangentResidualProjection",
+    "gradient_coordinate_subspace",
     "tangent_metric_preconditioner",
     "tangent_residual_projection",
     "tangent_svd_preconditioner",

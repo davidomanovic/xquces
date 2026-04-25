@@ -6,6 +6,7 @@ from xquces.optimize import (
     energy_and_residual,
     make_expectation_penalty_state_objective,
     make_projector_penalty_state_objective,
+    minimize_subspace_linear_method,
     minimize_svd_metric_bfgs,
     tangent_residual_projection,
     tangent_svd_preconditioner,
@@ -75,6 +76,86 @@ def test_minimize_svd_metric_bfgs_returns_full_coordinate_vector():
     assert result.metric_preconditioner["active_modes"] == 1
     assert result.x[0] + result.x[1] == pytest.approx(2.0)
     assert result.x[2] == pytest.approx(0.0)
+
+
+def test_minimize_subspace_linear_method_decreases_energy_with_analytic_jacobian():
+    hamiltonian = np.diag([0.0, 1.0])
+
+    def params_to_state(x):
+        theta = x[0] + 0.5 * x[1]
+        return np.array([np.cos(theta), np.sin(theta)], dtype=np.complex128)
+
+    def state_jacobian(x):
+        theta = x[0] + 0.5 * x[1]
+        base = np.array([-np.sin(theta), np.cos(theta)], dtype=np.complex128)
+        return np.column_stack([base, 0.5 * base])
+
+    def energy_gradient(x):
+        psi = params_to_state(x)
+        hpsi = hamiltonian @ psi
+        energy = float(np.vdot(psi, hpsi).real)
+        grad = 2.0 * np.real(state_jacobian(x).conj().T @ (hpsi - energy * psi))
+        return energy, grad
+
+    x0 = np.array([0.8, 0.2])
+    e0 = energy_gradient(x0)[0]
+    accepted_energies = []
+
+    def callback(result):
+        if getattr(result, "accepted", False):
+            accepted_energies.append(float(result.fun))
+
+    result = minimize_subspace_linear_method(
+        params_to_state,
+        hamiltonian,
+        x0,
+        energy_gradient=energy_gradient,
+        jac=state_jacobian,
+        subspace_dim=1,
+        maxiter=8,
+        regularization=1e-4,
+        regularization_attempts=4,
+        callback=callback,
+    )
+
+    assert result.fun <= e0
+    assert accepted_energies
+    assert all(
+        right <= left + 1e-12
+        for left, right in zip([e0] + accepted_energies[:-1], accepted_energies)
+    )
+
+
+def test_minimize_subspace_linear_method_supports_finite_difference_subspace_jacobian():
+    hamiltonian = np.diag([0.0, 1.0])
+
+    def params_to_state(x):
+        theta = x[0]
+        return np.array([np.cos(theta), np.sin(theta)], dtype=np.complex128)
+
+    def energy_gradient(x):
+        psi = params_to_state(x)
+        hpsi = hamiltonian @ psi
+        energy = float(np.vdot(psi, hpsi).real)
+        grad = np.array([2.0 * np.sin(x[0]) * np.cos(x[0])])
+        return energy, grad
+
+    x0 = np.array([0.7])
+    e0 = energy_gradient(x0)[0]
+    result = minimize_subspace_linear_method(
+        params_to_state,
+        hamiltonian,
+        x0,
+        energy_gradient=energy_gradient,
+        subspace_jacobian="finite-difference",
+        subspace_dim=1,
+        maxiter=4,
+        regularization=1e-4,
+        regularization_attempts=4,
+    )
+
+    assert result.fun <= e0
+    assert abs(result.x[0]) < abs(x0[0])
 
 
 def test_energy_and_residual_uses_hamiltonian_action():

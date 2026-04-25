@@ -80,11 +80,20 @@ def _solve_linear_method_eigensystem(
     energy_mat_reg = energy_mat.copy()
     energy_mat_reg[1:, 1:] += regularization * np.eye(n_params)
     eigs, vecs, _ = safe_eigh(energy_mat_reg, overlap_mat, lindep)
-    eig = eigs[0]
-    vec = vecs[:, 0]
-    vec /= vec[0]
-    vec = vec.real
-    return eig, vec
+    for eig, vec in zip(eigs, vecs.T):
+        reference_coeff = vec[0]
+        if (
+            np.isfinite(eig)
+            and np.all(np.isfinite(vec))
+            and abs(reference_coeff) > 1e-10
+        ):
+            scaled = (vec / reference_coeff).real
+            if np.all(np.isfinite(scaled)):
+                return float(eig), scaled
+
+    no_update = np.zeros(n_params + 1, dtype=np.float64)
+    no_update[0] = 1.0
+    return float(energy_mat[0, 0]), no_update
 
 
 def _get_param_update(
@@ -97,10 +106,18 @@ def _get_param_update(
     _, param_variations = _solve_linear_method_eigensystem(
         energy_mat, overlap_mat, regularization, lindep=lindep
     )
-    average_overlap = np.dot(param_variations, overlap_mat @ param_variations)
+    average_overlap = float(
+        np.real(np.dot(param_variations, overlap_mat @ param_variations))
+    )
+    if not np.isfinite(average_overlap) or average_overlap < -1:
+        return np.zeros(energy_mat.shape[0] - 1, dtype=np.float64)
+    average_overlap = max(average_overlap, 0.0)
     numerator = (1 - variation) * average_overlap
     denominator = (1 - variation) + variation * math.sqrt(1 + average_overlap)
-    return param_variations[1:] / (1 + numerator / denominator)
+    update = param_variations[1:] / (1 + numerator / denominator)
+    if not np.all(np.isfinite(update)):
+        return np.zeros_like(update)
+    return update
 
 
 def minimize_linear_method(
@@ -306,11 +323,23 @@ def minimize_linear_method(
         if optimize_regularization and optimize_variation:
 
             def _f_both(x: np.ndarray) -> float:
-                reg_ = x[0] ** 2
-                var_ = 0.5 * (1 + math.tanh(x[1]))
-                p_update = _get_param_update(energy_mat, overlap_mat_reg, reg_, var_, lindep)
-                v = _call_params_to_vec(params + p_update)
-                return float(np.vdot(v, _apply_hamiltonian(v)).real)
+                try:
+                    reg_ = x[0] ** 2
+                    var_ = 0.5 * (1 + math.tanh(x[1]))
+                    p_update = _get_param_update(
+                        energy_mat,
+                        overlap_mat_reg,
+                        reg_,
+                        var_,
+                        lindep,
+                    )
+                    if not np.all(np.isfinite(p_update)):
+                        return float("inf")
+                    v = _call_params_to_vec(params + p_update)
+                    value = float(np.vdot(v, _apply_hamiltonian(v)).real)
+                    return value if np.isfinite(value) else float("inf")
+                except (FloatingPointError, ValueError, np.linalg.LinAlgError):
+                    return float("inf")
 
             reg_param = math.sqrt(regularization)
             var_param = math.atanh(2 * min(1 - 1e-8, max(1e-8, variation)) - 1)
@@ -324,12 +353,22 @@ def minimize_linear_method(
         elif optimize_regularization:
 
             def _f_reg(x: np.ndarray) -> float:
-                reg_ = x[0] ** 2
-                p_update = _get_param_update(
-                    energy_mat, overlap_mat_reg, reg_, variation, lindep
-                )
-                v = _call_params_to_vec(params + p_update)
-                return float(np.vdot(v, _apply_hamiltonian(v)).real)
+                try:
+                    reg_ = x[0] ** 2
+                    p_update = _get_param_update(
+                        energy_mat,
+                        overlap_mat_reg,
+                        reg_,
+                        variation,
+                        lindep,
+                    )
+                    if not np.all(np.isfinite(p_update)):
+                        return float("inf")
+                    v = _call_params_to_vec(params + p_update)
+                    value = float(np.vdot(v, _apply_hamiltonian(v)).real)
+                    return value if np.isfinite(value) else float("inf")
+                except (FloatingPointError, ValueError, np.linalg.LinAlgError):
+                    return float("inf")
 
             reg_param = math.sqrt(regularization)
             res = minimize(_f_reg, x0=[reg_param], **optimize_kwargs)
@@ -341,12 +380,22 @@ def minimize_linear_method(
         elif optimize_variation:
 
             def _f_var(x: np.ndarray) -> float:
-                var_ = 0.5 * (1 + math.tanh(x[0]))
-                p_update = _get_param_update(
-                    energy_mat, overlap_mat_reg, regularization, var_, lindep
-                )
-                v = _call_params_to_vec(params + p_update)
-                return float(np.vdot(v, _apply_hamiltonian(v)).real)
+                try:
+                    var_ = 0.5 * (1 + math.tanh(x[0]))
+                    p_update = _get_param_update(
+                        energy_mat,
+                        overlap_mat_reg,
+                        regularization,
+                        var_,
+                        lindep,
+                    )
+                    if not np.all(np.isfinite(p_update)):
+                        return float("inf")
+                    v = _call_params_to_vec(params + p_update)
+                    value = float(np.vdot(v, _apply_hamiltonian(v)).real)
+                    return value if np.isfinite(value) else float("inf")
+                except (FloatingPointError, ValueError, np.linalg.LinAlgError):
+                    return float("inf")
 
             var_param = math.atanh(2 * min(1 - 1e-8, max(1e-8, variation)) - 1)
             res = minimize(_f_var, x0=[var_param], **optimize_kwargs)
@@ -356,10 +405,19 @@ def minimize_linear_method(
         lm_eig, param_variations = _solve_linear_method_eigensystem(
             energy_mat, overlap_mat_reg, regularization, lindep=lindep
         )
-        average_overlap = np.dot(param_variations, overlap_mat_reg @ param_variations)
-        numerator = (1 - variation) * average_overlap
-        denominator = (1 - variation) + variation * math.sqrt(1 + average_overlap)
-        param_update = param_variations[1:] / (1 + numerator / denominator)
+        average_overlap = float(
+            np.real(np.dot(param_variations, overlap_mat_reg @ param_variations))
+        )
+        if not np.isfinite(average_overlap) or average_overlap < -1:
+            average_overlap = 0.0
+            param_update = np.zeros_like(params)
+        else:
+            average_overlap = max(average_overlap, 0.0)
+            numerator = (1 - variation) * average_overlap
+            denominator = (1 - variation) + variation * math.sqrt(1 + average_overlap)
+            param_update = param_variations[1:] / (1 + numerator / denominator)
+            if not np.all(np.isfinite(param_update)):
+                param_update = np.zeros_like(params)
 
         step_2 = float(np.linalg.norm(param_update))
         step_inf = float(np.max(np.abs(param_update))) if len(param_update) else 0.0

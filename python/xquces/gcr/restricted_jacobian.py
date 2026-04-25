@@ -507,6 +507,153 @@ def make_restricted_gcr_jacobian(
     return jac
 
 
+def make_restricted_gcr_subspace_jacobian(
+    parameterization: (
+        IGCR2SpinRestrictedParameterization
+        | IGCR3SpinRestrictedParameterization
+        | IGCR4SpinRestrictedParameterization
+        | IGCR4SpinBalancedFixedSectorParameterization
+    ),
+    reference_vec: np.ndarray,
+    nelec: tuple[int, int],
+) -> Callable[[np.ndarray, np.ndarray], np.ndarray]:
+    """Return a function computing ``J(params) @ directions`` analytically.
+
+    Unlike :func:`make_restricted_gcr_jacobian`, this does not materialise the
+    full tangent matrix. Its cost scales with the number of requested directions.
+    """
+    if isinstance(parameterization, IGCR4SpinSeparatedFixedSectorParameterization):
+        raise NotImplementedError(
+            "spin-separated GCR subspace Jacobian is not implemented"
+        )
+
+    norb = parameterization.norb
+    left_chart = parameterization._left_orbital_chart
+    right_chart = parameterization.right_orbital_chart
+    left_basis = _left_chart_basis(left_chart, norb)
+    right_basis = _right_chart_basis(right_chart, norb)
+    tensor_a = _one_body_tensor(norb, nelec[0])
+    tensor_b = _one_body_tensor(norb, nelec[1])
+    reference_mat = reshape_state(
+        np.asarray(reference_vec, dtype=np.complex128), norb, nelec
+    )
+    dim_a, dim_b = reference_mat.shape
+    dim = dim_a * dim_b
+    diag_features = _diag_feature_matrix(parameterization, nelec)
+    transform = _public_to_native_matrix(parameterization)
+
+    def subspace_jac(params: np.ndarray, directions: np.ndarray) -> np.ndarray:
+        params = np.asarray(params, dtype=np.float64)
+        if params.shape != (parameterization.n_params,):
+            raise ValueError(
+                f"Expected {(parameterization.n_params,)}, got {params.shape}."
+            )
+        directions = np.asarray(directions, dtype=np.float64)
+        if directions.ndim != 2 or directions.shape[0] != parameterization.n_params:
+            raise ValueError(
+                "directions must have shape "
+                f"({parameterization.n_params}, m); got {directions.shape}."
+            )
+        n_dir = directions.shape[1]
+        if n_dir == 0:
+            return np.zeros((dim, 0), dtype=np.complex128)
+
+        native = parameterization._native_parameters_from_public(params)
+        native_dirs = directions if transform is None else transform @ directions
+
+        n_left = parameterization.n_left_orbital_rotation_params
+        right_start = parameterization._right_orbital_rotation_start
+        n_right = parameterization.n_right_orbital_rotation_params
+
+        left_params = native[:n_left]
+        diag_params = native[n_left:right_start]
+        right_params = native[right_start : right_start + n_right]
+
+        left_dirs = native_dirs[:n_left]
+        diag_dirs = native_dirs[n_left:right_start]
+        right_dirs = native_dirs[right_start : right_start + n_right]
+
+        u_left = left_chart.unitary_from_parameters(left_params, norb)
+        u_final = right_chart.unitary_from_parameters(right_params, norb)
+        u_right = u_left.conj().T @ u_final
+
+        kappa_left = _left_chart_kappa(left_chart, left_params, norb, basis=left_basis)
+        kappa_final = _right_chart_kappa(right_chart, right_params, norb)
+
+        rep_left_a = _sector_representation(u_left, norb, nelec[0])
+        rep_left_b = _sector_representation(u_left, norb, nelec[1])
+        rep_right_a = _sector_representation(u_right, norb, nelec[0])
+        rep_right_b = _sector_representation(u_right, norb, nelec[1])
+
+        rotated_right = rep_right_a @ reference_mat @ rep_right_b.T
+
+        if diag_features.shape[1]:
+            phase = np.exp(1j * (diag_features @ diag_params)).reshape(dim_a, dim_b)
+        else:
+            phase = np.ones((dim_a, dim_b), dtype=np.complex128)
+
+        diagonalized = phase * rotated_right
+        state = rep_left_a @ diagonalized @ rep_left_b.T
+        d_state = np.zeros((n_dir, dim_a, dim_b), dtype=np.complex128)
+
+        if n_left:
+            left_basis_dirs = np.einsum(
+                "kj,kpq->jpq",
+                left_dirs,
+                left_basis,
+                optimize=True,
+            )
+            gen_left = _generator_batch_from_kappa(kappa_left, left_basis_dirs)
+            gen_right_from_left = -np.matmul(
+                u_left.conj().T,
+                np.matmul(gen_left, u_left),
+            )
+
+            left_a = _one_body_batch_to_sector(gen_left, tensor_a)
+            left_b = _one_body_batch_to_sector(gen_left, tensor_b)
+            right_a = _one_body_batch_to_sector(gen_right_from_left, tensor_a)
+            right_b = _one_body_batch_to_sector(gen_right_from_left, tensor_b)
+
+            d_rotated_right = _batch_row_and_col(right_a, right_b, rotated_right)
+            d_diagonalized = phase[None, :, :] * d_rotated_right
+            d_left = _batch_row_and_col(left_a, left_b, state)
+            d_left += _apply_batch_transform(rep_left_a, rep_left_b, d_diagonalized)
+            d_state += d_left
+
+        if diag_params.size:
+            feature_dirs = diag_features @ diag_dirs
+            d_diagonalized = (
+                1j
+                * feature_dirs.T.reshape(n_dir, dim_a, dim_b)
+                * diagonalized[None, :, :]
+            )
+            d_state += _apply_batch_transform(rep_left_a, rep_left_b, d_diagonalized)
+
+        if n_right:
+            right_basis_dirs = np.einsum(
+                "kj,kpq->jpq",
+                right_dirs,
+                right_basis,
+                optimize=True,
+            )
+            gen_final = _generator_batch_from_kappa(kappa_final, right_basis_dirs)
+            gen_right_from_final = np.matmul(
+                u_left.conj().T,
+                np.matmul(gen_final, u_left),
+            )
+
+            right_a = _one_body_batch_to_sector(gen_right_from_final, tensor_a)
+            right_b = _one_body_batch_to_sector(gen_right_from_final, tensor_b)
+
+            d_rotated_right = _batch_row_and_col(right_a, right_b, rotated_right)
+            d_diagonalized = phase[None, :, :] * d_rotated_right
+            d_state += _apply_batch_transform(rep_left_a, rep_left_b, d_diagonalized)
+
+        return d_state.reshape(n_dir, dim).T
+
+    return subspace_jac
+
+
 def _batch_left_multiply(batch: np.ndarray, mat: np.ndarray) -> np.ndarray:
     if batch.shape[0] == 0:
         return np.zeros((0,) + mat.shape, dtype=np.complex128)

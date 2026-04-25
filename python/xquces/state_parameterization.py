@@ -5,7 +5,10 @@ from typing import Callable
 
 import numpy as np
 
-from xquces.gcr.restricted_jacobian_ext import make_restricted_gcr_jacobian
+from xquces.gcr.restricted_jacobian_ext import (
+    make_restricted_gcr_jacobian,
+    make_restricted_gcr_subspace_jacobian,
+)
 from xquces.states import doci_dimension, doci_params_from_state, doci_state, doci_state_jacobian
 
 
@@ -98,6 +101,66 @@ class CompositeReferenceAnsatzParameterization:
         return func
 
 
+def make_composite_reference_ansatz_vjp(
+    parameterization: CompositeReferenceAnsatzParameterization,
+) -> Callable[[np.ndarray, np.ndarray], np.ndarray]:
+    """Return a function vjp(params, v) → grad computing 2 Re(J(params)† v).
+
+    Uses O(1) H-applications: only the residual vector v = (H-E)|ψ⟩ enters,
+    with no H-applications inside this function.
+
+    Reference gradient: applies the ansatz to each column of J_ref and dots
+    with v — avoids materialising the full composite Jacobian.
+    Ansatz gradient: builds J_ansatz analytically (no H-apps) and multiplies
+    by v.
+    """
+    reference_parameterization = parameterization.reference_parameterization
+    ansatz_parameterization = parameterization.ansatz_parameterization
+    nelec = tuple(parameterization.nelec)
+
+    if not hasattr(reference_parameterization, "state_jacobian_from_parameters"):
+        raise TypeError(
+            "reference_parameterization does not implement state_jacobian_from_parameters"
+        )
+
+    def vjp(params: np.ndarray, v: np.ndarray) -> np.ndarray:
+        params = np.asarray(params, dtype=np.float64)
+        v = np.asarray(v, dtype=np.complex128)
+        if params.shape != (parameterization.n_params,):
+            raise ValueError(f"Expected {(parameterization.n_params,)}, got {params.shape}.")
+        reference_params, ansatz_params = parameterization.split_parameters(params)
+
+        # Reference gradient: ∂E/∂θ_r^k = 2 Re(⟨U_a J_ref[:,k] | v⟩)
+        # Computed column-by-column to avoid materialising the full ref_block.
+        reference_jac = reference_parameterization.state_jacobian_from_parameters(reference_params)
+        ansatz = ansatz_parameterization.ansatz_from_parameters(ansatz_params)
+        n_ref = reference_jac.shape[1]
+        if n_ref:
+            grad_ref = np.array([
+                2.0 * float(np.real(np.vdot(
+                    ansatz.apply(reference_jac[:, k], nelec=nelec, copy=True), v
+                )))
+                for k in range(n_ref)
+            ])
+        else:
+            grad_ref = np.zeros(0)
+
+        # Ansatz gradient: build J_ansatz analytically (no H-apps), then J_ansatz† v
+        reference_state = reference_parameterization.state_from_parameters(reference_params)
+        n_ansatz = parameterization.n_ansatz_params
+        if n_ansatz:
+            J_ansatz = make_restricted_gcr_jacobian(
+                ansatz_parameterization, reference_state, nelec
+            )(ansatz_params)
+            grad_ansatz = 2.0 * (J_ansatz.conj().T @ v).real
+        else:
+            grad_ansatz = np.zeros(0)
+
+        return np.concatenate([grad_ref, grad_ansatz])
+
+    return vjp
+
+
 def make_composite_reference_ansatz_jacobian(
     parameterization: CompositeReferenceAnsatzParameterization,
 ) -> Callable[[np.ndarray], np.ndarray]:
@@ -137,3 +200,61 @@ def make_composite_reference_ansatz_jacobian(
         return np.hstack([ref_block, ansatz_block])
 
     return jac
+
+
+def make_composite_reference_ansatz_subspace_jacobian(
+    parameterization: CompositeReferenceAnsatzParameterization,
+) -> Callable[[np.ndarray, np.ndarray], np.ndarray]:
+    reference_parameterization = parameterization.reference_parameterization
+    ansatz_parameterization = parameterization.ansatz_parameterization
+    nelec = tuple(parameterization.nelec)
+
+    if not hasattr(reference_parameterization, "state_jacobian_from_parameters"):
+        raise TypeError(
+            "reference_parameterization does not implement state_jacobian_from_parameters"
+        )
+
+    def subspace_jac(params: np.ndarray, directions: np.ndarray) -> np.ndarray:
+        params = np.asarray(params, dtype=np.float64)
+        if params.shape != (parameterization.n_params,):
+            raise ValueError(f"Expected {(parameterization.n_params,)}, got {params.shape}.")
+        directions = np.asarray(directions, dtype=np.float64)
+        if directions.ndim != 2 or directions.shape[0] != parameterization.n_params:
+            raise ValueError(
+                "directions must have shape "
+                f"({parameterization.n_params}, m); got {directions.shape}."
+            )
+        n_dir = directions.shape[1]
+        reference_params, ansatz_params = parameterization.split_parameters(params)
+        nref = parameterization.n_reference_params
+        reference_dirs = directions[:nref]
+        ansatz_dirs = directions[nref:]
+
+        reference_state = reference_parameterization.state_from_parameters(
+            reference_params
+        )
+        ansatz = ansatz_parameterization.ansatz_from_parameters(ansatz_params)
+        out = np.zeros((reference_state.size, n_dir), dtype=np.complex128)
+
+        if reference_dirs.size and np.any(reference_dirs):
+            reference_jac = reference_parameterization.state_jacobian_from_parameters(
+                reference_params
+            )
+            reference_jvp = reference_jac @ reference_dirs
+            for k in range(n_dir):
+                out[:, k] += ansatz.apply(
+                    reference_jvp[:, k],
+                    nelec=nelec,
+                    copy=True,
+                )
+
+        if ansatz_dirs.size and np.any(ansatz_dirs):
+            out += make_restricted_gcr_subspace_jacobian(
+                ansatz_parameterization,
+                reference_state,
+                nelec,
+            )(ansatz_params, ansatz_dirs)
+
+        return out
+
+    return subspace_jac

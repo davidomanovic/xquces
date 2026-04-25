@@ -332,6 +332,60 @@ def product_pair_uccd_state_jacobian(
     return out
 
 
+def product_pair_uccd_state_vjp(
+    norb: int,
+    nelec: tuple[int, int],
+    params: np.ndarray,
+    v: np.ndarray,
+    *,
+    time: float = 1.0,
+) -> np.ndarray:
+    """VJP of product_pair_uccd_state: returns 2 Re(J† v[doci_indices]).
+
+    Backward pass through the stored forward states — O(n_params × dim_DOCI)
+    with zero H-applications. `v` may live in the full Hilbert space; only the
+    DOCI-subspace components are used.
+    """
+    if nelec[0] != nelec[1]:
+        raise ValueError("Pair-UCCD reference requires n_alpha == n_beta")
+    params = np.asarray(params, dtype=np.float64)
+    generators = _pair_uccd_generator_basis(norb, nelec)
+    blocks = _pair_uccd_rotation_blocks(norb, nelec)
+    expected = len(blocks)
+    if params.shape != (expected,):
+        raise ValueError(f"Expected {(expected,)}, got {params.shape}.")
+    indices = np.asarray(_doci_subspace_indices(norb, nelec), dtype=np.intp)
+    doci_dim = len(indices)
+
+    e0 = np.zeros(doci_dim, dtype=np.complex128)
+    if doci_dim:
+        e0[0] = 1.0
+
+    # Forward pass — store all intermediate DOCI states
+    forward: list[np.ndarray] = [e0]
+    current = np.array(e0, copy=True)
+    for theta, pair_blocks in zip(time * params, blocks):
+        current = np.array(current, copy=True)
+        _apply_pair_rotation_blocks_in_place(current, pair_blocks, float(theta))
+        forward.append(current)
+
+    # Backward pass — λ starts as v projected to DOCI
+    v = np.asarray(v, dtype=np.complex128)
+    lam = np.array(v[indices], dtype=np.complex128, copy=True)
+
+    grad = np.zeros(expected)
+    for k in reversed(range(expected)):
+        # ∂E/∂p_k = 2t Re(⟨G_k forward[k+1] | λ[k+1]⟩)
+        # where G_k is real antisymmetric so G_k† = -G_k and
+        # Re(⟨G_k f | λ⟩) = -Re(⟨f | G_k λ⟩) = Re(vdot(G_k f, λ))
+        Gf = generators[k] @ forward[k + 1]
+        grad[k] = float(2.0 * time * np.real(np.vdot(Gf, lam)))
+        # Propagate λ backward: λ[k] = R_k^{-1} λ[k+1]
+        _apply_pair_rotation_blocks_in_place(lam, blocks[k], -time * float(params[k]))
+
+    return grad
+
+
 @dataclass(frozen=True)
 class PairUCCDStateParameterization:
     norb: int
