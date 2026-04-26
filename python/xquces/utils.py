@@ -7,7 +7,7 @@ import pyscf.gto
 import pyscf.mcscf
 import pyscf.scf
 from pyscf.fci.spin_op import contract_ss
-
+import math
 
 def build_n2_mol(R: float, basis: str, *, symmetry: bool | str = "Dooh"):
     mol = pyscf.gto.Mole()
@@ -20,21 +20,45 @@ def build_n2_mol(R: float, basis: str, *, symmetry: bool | str = "Dooh"):
     return mol
 
 
-def build_h4_square_mol(R: float, basis: str, *, symmetry: bool | str = False):
+def build_hydrogen_ring(bond_length: float, n: int, basis: str, *, symmetry: bool):
+    if n < 4 or n % 2:
+        raise ValueError("n must be an even integer >= 4")
+
+    radius = float(bond_length) / (2.0 * np.sin(np.pi / n))
+    atoms = [
+        (
+            "H",
+            (
+                radius * np.cos(2.0 * np.pi * k / n),
+                radius * np.sin(2.0 * np.pi * k / n),
+                0.0,
+            ),
+        )
+        for k in range(n)
+    ]
+    return pyscf.gto.M(
+        atom=atoms,
+        basis=basis,
+        spin=0,
+        charge=0,
+        symmetry=symmetry,
+    )
+
+def build_hydrogen_chain(R, n, basis,):
+    xs = [(i - 0.5 * (n - 1)) * R for i in range(n)]
+    atom = [("H", (x, 0.0, 0.0)) for x in xs]
+
     mol = pyscf.gto.Mole()
     mol.build(
-        atom=[
-            ("H", (-0.5 * R, -0.5 * R, 0.0)),
-            ("H", (0.5 * R, -0.5 * R, 0.0)),
-            ("H", (-0.5 * R, 0.5 * R, 0.0)),
-            ("H", (0.5 * R, 0.5 * R, 0.0)),
-        ],
+        atom=atom,
         basis=basis,
-        symmetry=symmetry,
+        charge=0,
+        spin=n % 2,
+        symmetry=False,
         verbose=0,
     )
     return mol
-
+    
 
 def run_rhf(
     mol,

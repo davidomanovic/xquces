@@ -111,7 +111,7 @@ from xquces.continuation import (
 from xquces.gcr.igcr2 import IGCR2SpinRestrictedParameterization
 from xquces.gcr.igcr3 import IGCR3SpinRestrictedParameterization
 from xquces.gcr.igcr4 import IGCR4SpinRestrictedParameterization
-from xquces.utils import apply_spin_square, spin_square
+from xquces.utils import apply_spin_square, spin_square, build_hydrogen_ring
 
 __all__ = [
     "hartree_fock_state",

@@ -681,8 +681,8 @@ class GCR3ProductPairUCCDParameterization:
     right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
     real_right_orbital_chart: bool = False
     left_right_ov_relative_scale: float | None = None
-    tau_seed_scale: float = 0.25
-    omega_seed_scale: float = 0.10
+    tau_seed_scale: float = 0.0
+    omega_seed_scale: float = 0.0
 
     @property
     def reference_parameterization(self) -> ProductPairUCCDStateParameterization:
@@ -787,11 +787,11 @@ class GCR4ProductPairUCCDParameterization:
     right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
     real_right_orbital_chart: bool = False
     left_right_ov_relative_scale: float | None = None
-    tau_seed_scale: float = 0.25
-    omega_seed_scale: float = 0.10
-    eta_seed_scale: float = 0.05
-    rho_seed_scale: float = 0.02
-    sigma_seed_scale: float = 0.01
+    tau_seed_scale: float = 0.0
+    omega_seed_scale: float = 0.0
+    eta_seed_scale: float = 0.0
+    rho_seed_scale: float = 0.0
+    sigma_seed_scale: float = 0.0
 
     @property
     def reference_parameterization(self) -> ProductPairUCCDStateParameterization:
