@@ -25,7 +25,7 @@ from xquces.gcr.igcr4 import (
 )
 from xquces.pair_uccd import PairUCCDStateParameterization
 from xquces.ucj.model import UCJAnsatz
-
+from xquces.gcr.bridge_gcr2 import GCR2FullUnitaryChart
 
 def _make_composite(reference_parameterization, ansatz_parameterization, nelec):
     from xquces.state_parameterization import CompositeReferenceAnsatzParameterization
@@ -520,7 +520,7 @@ class GCR2PairUCCDParameterization:
     interaction_pairs: list[tuple[int, int]] | None = None
     base_parameterization: IGCR2SpinRestrictedParameterization | None = None
     left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
-    right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
+    right_orbital_chart_override: object = field(default_factory=GCR2FullUnitaryChart)
     real_right_orbital_chart: bool = False
     left_right_ov_relative_scale: float | None = None
 
@@ -635,7 +635,7 @@ class GCR3PairUCCDParameterization:
     nocc: int
     base_parameterization: IGCR3SpinRestrictedParameterization | None = None
     left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
-    right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
+    right_orbital_chart_override: object = field(default_factory=GCR2FullUnitaryChart)
     real_right_orbital_chart: bool = False
     left_right_ov_relative_scale: float | None = None
     tau_seed_scale: float = 0.25
@@ -824,7 +824,7 @@ class GCR4PairUCCDParameterization:
     nocc: int
     base_parameterization: IGCR4SpinRestrictedParameterization | None = None
     left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
-    right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
+    right_orbital_chart_override: object = field(default_factory=GCR2FullUnitaryChart)
     real_right_orbital_chart: bool = False
     left_right_ov_relative_scale: float | None = None
     tau_seed_scale: float = 0.25

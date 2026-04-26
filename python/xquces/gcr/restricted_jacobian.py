@@ -14,6 +14,7 @@ from xquces.gcr.igcr2 import (
     IGCR2ReferenceOVUnitaryChart,
     IGCR2SpinRestrictedParameterization,
 )
+from xquces.gcr.bridge_gcr2 import GCR2FullUnitaryChart
 from xquces.gcr.igcr3 import (
     IGCR3SpinRestrictedParameterization,
     _default_tau_indices,
@@ -44,8 +45,22 @@ def _antihermitian_basis_from_pairs(
         basis[2 * k + 1, q, p] = 1j
     return basis
 
+def _full_antihermitian_basis(norb: int) -> np.ndarray:
+    pairs = list(itertools.combinations(range(norb), 2))
+    basis = np.zeros((norb * norb, norb, norb), dtype=np.complex128)
+
+    idx = 0
+    for p in range(norb):
+        basis[idx, p, p] = 1j
+        idx += 1
+
+    offdiag = _antihermitian_basis_from_pairs(norb, pairs)
+    basis[idx:] = offdiag
+    return basis
 
 def _left_chart_basis(chart: object, norb: int) -> np.ndarray:
+    if isinstance(chart, GCR2FullUnitaryChart):
+        return _full_antihermitian_basis(norb)
     if isinstance(chart, IGCR2LeftUnitaryChart):
         pairs = list(itertools.combinations(range(norb), 2))
         return _antihermitian_basis_from_pairs(norb, pairs)
@@ -74,6 +89,8 @@ def _left_chart_kappa(
 
 
 def _right_chart_basis(chart: object, norb: int) -> np.ndarray:
+    if isinstance(chart, GCR2FullUnitaryChart):
+        return _full_antihermitian_basis(norb)
     if isinstance(chart, IGCR2ReferenceOVUnitaryChart):
         nocc = chart.nocc
         nvirt = chart.nvirt
@@ -109,6 +126,11 @@ def _right_chart_basis(chart: object, norb: int) -> np.ndarray:
 
 def _right_chart_kappa(chart: object, params: np.ndarray, norb: int) -> np.ndarray:
     params = np.asarray(params, dtype=np.float64)
+    if isinstance(chart, GCR2FullUnitaryChart):
+        if params.size == 0:
+            return np.zeros((norb, norb), dtype=np.complex128)
+        basis = _full_antihermitian_basis(norb)
+        return np.tensordot(params, basis, axes=(0, 0))
     if isinstance(chart, IGCR2ReferenceOVUnitaryChart):
         if params.size == 0:
             return np.zeros((norb, norb), dtype=np.complex128)

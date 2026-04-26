@@ -17,6 +17,7 @@ from xquces.gcr.doci_reference_gcr2 import (
     _doci_unitary_from_params,
     apply_doci_reference_global,
 )
+from xquces.gcr.bridge_gcr2 import GCR2FullUnitaryChart
 from xquces.gcr.doci_reference_gcr3 import GCR3DOCIReferenceParameterization
 from xquces.gcr.doci_reference_gcr4 import GCR4DOCIReferenceParameterization
 from xquces.gcr.restricted_jacobian import (
