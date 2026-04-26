@@ -27,9 +27,11 @@ from xquces.gcr.igcr2 import (
     _right_unitary_from_left_and_final,
     _symmetric_matrix_from_values,
     _validate_pairs,
+    orbital_transport_unitary_from_overlap,
     orbital_relabeling_from_overlap,
     relabel_igcr2_ansatz_orbitals,
     reduce_spin_restricted,
+    transport_igcr2_ansatz_orbitals,
 )
 from xquces.orbitals import apply_orbital_rotation
 from xquces.ucj.init import UCJRestrictedProjectedDFSeed
@@ -625,6 +627,29 @@ def relabel_igcr3_ansatz_orbitals(
     )
 
 
+def transport_igcr3_ansatz_orbitals(
+    ansatz: IGCR3Ansatz, basis_change: np.ndarray
+) -> IGCR3Ansatz:
+    basis_change = np.asarray(basis_change, dtype=np.complex128)
+    if basis_change.shape != (ansatz.norb, ansatz.norb):
+        raise ValueError(
+            f"basis_change must have shape {(ansatz.norb, ansatz.norb)}, "
+            f"got {basis_change.shape}."
+        )
+    if not np.allclose(
+        basis_change.conj().T @ basis_change,
+        np.eye(ansatz.norb),
+        atol=1e-10,
+    ):
+        raise ValueError("basis_change must be unitary")
+    return IGCR3Ansatz(
+        diagonal=ansatz.diagonal,
+        left=basis_change.conj().T @ np.asarray(ansatz.left, dtype=np.complex128),
+        right=np.asarray(ansatz.right, dtype=np.complex128),
+        nocc=ansatz.nocc,
+    )
+
+
 @dataclass(frozen=True)
 class IGCR3SpinRestrictedParameterization:
     norb: int
@@ -916,7 +941,12 @@ class IGCR3SpinRestrictedParameterization:
 
         n = self.n_right_orbital_rotation_params
         left_param_unitary = self._left_orbital_chart.unitary_from_parameters(left_params, self.norb)
-        final_eff = _final_unitary_from_left_and_right(left_param_unitary, right_eff, self.nocc)
+        final_eff = _final_unitary_from_left_and_right(
+            left_param_unitary,
+            right_eff,
+            self.nocc,
+            project_reference_ov=self.right_orbital_chart_override is None,
+        )
         out[idx : idx + n] = self.right_orbital_chart.parameters_from_unitary(final_eff)
         return self._public_parameters_from_native(out)
 
@@ -984,12 +1014,15 @@ class IGCR3SpinRestrictedParameterization:
         if orbital_overlap is not None:
             if old_for_new is not None or phases is not None:
                 raise ValueError("Pass either orbital_overlap or explicit relabeling, not both.")
-            old_for_new, phases = orbital_relabeling_from_overlap(
-                orbital_overlap,
-                nocc=self.nocc,
-                block_diagonal=block_diagonal,
-            )
-        if old_for_new is not None:
+            del block_diagonal
+            basis_change = orbital_transport_unitary_from_overlap(orbital_overlap)
+            if isinstance(ansatz, IGCR3Ansatz):
+                ansatz = transport_igcr3_ansatz_orbitals(ansatz, basis_change)
+            elif isinstance(ansatz, IGCR2Ansatz):
+                ansatz = transport_igcr2_ansatz_orbitals(ansatz, basis_change)
+            else:
+                raise TypeError(f"Unsupported ansatz type for transfer: {type(ansatz)!r}")
+        elif old_for_new is not None:
             if isinstance(ansatz, IGCR3Ansatz):
                 ansatz = relabel_igcr3_ansatz_orbitals(ansatz, old_for_new, phases)
             elif isinstance(ansatz, IGCR2Ansatz):

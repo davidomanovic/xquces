@@ -462,11 +462,6 @@ def _transfer_params(self, previous_parameters, previous_parameterization, old_f
     if orbital_overlap is not None:
         if old_for_new is not None or phases is not None:
             raise ValueError("Pass either orbital_overlap or explicit relabeling, not both.")
-        old_for_new, phases = orbital_relabeling_from_overlap(
-            orbital_overlap,
-            nocc=self.nocc,
-            block_diagonal=block_diagonal,
-        )
     prev = np.asarray(previous_parameters, dtype=np.float64)
     reference_params = np.zeros(self.n_reference_params, dtype=np.float64)
 
@@ -474,7 +469,8 @@ def _transfer_params(self, previous_parameters, previous_parameterization, old_f
         if prev.shape != (previous_parameterization.n_params,):
             raise ValueError(f"Expected {(previous_parameterization.n_params,)}, got {prev.shape}.")
         if (
-            isinstance(previous_parameterization, type(self))
+            orbital_overlap is None
+            and isinstance(previous_parameterization, type(self))
             and previous_parameterization.norb == self.norb
             and previous_parameterization.nocc == self.nocc
             and _is_trivial_relabel(self.norb, old_for_new, phases)
@@ -486,16 +482,16 @@ def _transfer_params(self, previous_parameters, previous_parameterization, old_f
             self,
             prev_reference,
             previous_parameterization,
-            old_for_new,
-            phases,
+            None if orbital_overlap is not None else old_for_new,
+            None if orbital_overlap is not None else phases,
         )
 
         ansatz_params = self.ansatz_parameterization.transfer_parameters_from(
             prev_ansatz,
             previous_parameterization=previous_parameterization.ansatz_parameterization,
-            old_for_new=old_for_new,
-            phases=phases,
-            orbital_overlap=None,
+            old_for_new=None if orbital_overlap is not None else old_for_new,
+            phases=None if orbital_overlap is not None else phases,
+            orbital_overlap=orbital_overlap,
             block_diagonal=block_diagonal,
         )
         return np.concatenate([
@@ -506,9 +502,9 @@ def _transfer_params(self, previous_parameters, previous_parameterization, old_f
     ansatz_params = self.ansatz_parameterization.transfer_parameters_from(
         prev,
         previous_parameterization=previous_parameterization,
-        old_for_new=old_for_new,
-        phases=phases,
-        orbital_overlap=None,
+        old_for_new=None if orbital_overlap is not None else old_for_new,
+        phases=None if orbital_overlap is not None else phases,
+        orbital_overlap=orbital_overlap,
         block_diagonal=block_diagonal,
     )
     return np.concatenate([
