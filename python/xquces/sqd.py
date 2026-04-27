@@ -105,7 +105,9 @@ def determinant_indices_from_bitstrings(
 
     out = []
     for x in np.asarray(bitstrings, dtype=np.uint64):
-        idx = bitstring_to_determinant_index(int(x), norb, nelec, alpha_index, beta_index)
+        idx = bitstring_to_determinant_index(
+            int(x), norb, nelec, alpha_index, beta_index
+        )
         if idx is not None:
             out.append(idx)
     return np.asarray(sorted(set(out)), dtype=np.int64)
@@ -194,14 +196,20 @@ def run_sqd_from_statevector(
     )
 
     valid = np.asarray(
-        postselect_spin_bitstrings(samples, norb=norb, n_alpha=nelec[0], n_beta=nelec[1]),
+        postselect_spin_bitstrings(
+            samples, norb=norb, n_alpha=nelec[0], n_beta=nelec[1]
+        ),
         dtype=np.uint64,
     )
 
     if initial_occupancies is None:
         if len(valid) == 0:
-            occ_a = np.array([1.0] * nelec[0] + [0.0] * (norb - nelec[0]), dtype=np.float64)
-            occ_b = np.array([1.0] * nelec[1] + [0.0] * (norb - nelec[1]), dtype=np.float64)
+            occ_a = np.array(
+                [1.0] * nelec[0] + [0.0] * (norb - nelec[0]), dtype=np.float64
+            )
+            occ_b = np.array(
+                [1.0] * nelec[1] + [0.0] * (norb - nelec[1]), dtype=np.float64
+            )
         else:
             occ_a, occ_b = estimate_spin_orbital_occupancies(valid, norb=norb)
             occ_a = np.asarray(occ_a, dtype=np.float64)
@@ -250,11 +258,15 @@ def run_sqd_from_statevector(
 
         for batch in batches:
             batch = np.asarray(batch, dtype=np.uint64)
-            det_indices = determinant_indices_from_bitstrings(batch, norb=norb, nelec=nelec)
+            det_indices = determinant_indices_from_bitstrings(
+                batch, norb=norb, nelec=nelec
+            )
             if len(det_indices) == 0:
                 continue
 
-            h_sub = projected_hamiltonian_from_dim(det_indices, hamiltonian, full_dim=full_dim)
+            h_sub = projected_hamiltonian_from_dim(
+                det_indices, hamiltonian, full_dim=full_dim
+            )
             evals, evecs = scipy.linalg.eigh(h_sub)
             k = int(np.argmin(evals))
             energy = float(np.real(evals[k]) + hamiltonian.ecore)

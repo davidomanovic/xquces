@@ -470,9 +470,7 @@ class IGCR4SpinSeparatedFixedSectorParameterization:
                 self, "left_orbital_chart_alpha", IGCR2LeftUnitaryChart()
             )
         if self.left_orbital_chart_beta is None:
-            object.__setattr__(
-                self, "left_orbital_chart_beta", IGCR2LeftUnitaryChart()
-            )
+            object.__setattr__(self, "left_orbital_chart_beta", IGCR2LeftUnitaryChart())
 
     @property
     def nocc(self) -> int:
@@ -606,8 +604,12 @@ class IGCR4SpinSeparatedFixedSectorParameterization:
         self,
         params: np.ndarray,
     ) -> IGCR4SpinSeparatedFixedSectorAnsatz:
-        left_alpha_params, left_beta_params, diagonal_params, right_alpha_params, (
-            right_beta_params
+        (
+            left_alpha_params,
+            left_beta_params,
+            diagonal_params,
+            right_alpha_params,
+            (right_beta_params),
         ) = self._split_params(params)
 
         left_alpha = self.left_orbital_chart_alpha.unitary_from_parameters(

@@ -76,9 +76,9 @@ def _diag2_features(
 ) -> np.ndarray:
     occ_a = occ_indicator_rows(norb, nelec[0]).astype(np.float64, copy=False)
     occ_b = occ_indicator_rows(norb, nelec[1]).astype(np.float64, copy=False)
-    counts = (
-        occ_a[:, None, :] + occ_b[None, :, :]
-    ).reshape(occ_a.shape[0] * occ_b.shape[0], norb)
+    counts = (occ_a[:, None, :] + occ_b[None, :, :]).reshape(
+        occ_a.shape[0] * occ_b.shape[0], norb
+    )
     features = np.empty((counts.shape[0], len(pairs)), dtype=np.float64)
     for col, (p, q) in enumerate(pairs):
         features[:, col] = counts[:, p] * counts[:, q]
@@ -130,7 +130,9 @@ def _pair_hop_matrices(
                     data.append(float(-sign_a * sign_b))
 
         matrices.append(
-            sparse.csr_matrix((data, (rows, cols)), shape=(dim, dim), dtype=np.complex128)
+            sparse.csr_matrix(
+                (data, (rows, cols)), shape=(dim, dim), dtype=np.complex128
+            )
         )
 
     return tuple(matrices)
@@ -346,7 +348,9 @@ class GCR2PairHopAnsatz:
             self.pairs,
         )
 
-    def apply(self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True) -> np.ndarray:
+    def apply(
+        self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True
+    ) -> np.ndarray:
         out = apply_orbital_rotation(
             vec,
             self.right,
@@ -381,8 +385,7 @@ class GCR2PairHopAnsatz:
             )
             out = flatten_state(out2)
         elif (
-            use_rust_allowed
-            and apply_gcr2_pairhop_middle_in_place_num_rep is not None
+            use_rust_allowed and apply_gcr2_pairhop_middle_in_place_num_rep is not None
         ):
             out2 = reshape_state(out, self.norb, nelec)
             apply_gcr2_pairhop_middle_in_place_num_rep(
@@ -429,7 +432,9 @@ class GCR2ProductPairHopAnsatz:
     pairs: tuple[tuple[int, int], ...]
     use_rust: bool = True
 
-    def apply(self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True) -> np.ndarray:
+    def apply(
+        self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True
+    ) -> np.ndarray:
         out = apply_orbital_rotation(
             vec,
             self.right,
@@ -536,7 +541,9 @@ class GCR2PairHopParameterization:
             + self.n_right_orbital_rotation_params
         )
 
-    def _split(self, params: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def _split(
+        self, params: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         params = np.asarray(params, dtype=np.float64)
         if params.shape != (self.n_params,):
             raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")

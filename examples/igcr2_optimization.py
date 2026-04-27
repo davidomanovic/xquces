@@ -140,7 +140,9 @@ def main():
         cas.fix_spin_(ss=0)
         cas.kernel(mo_coeff=mo_coeff)
 
-        ham_xq = MolecularHamiltonianLinearOperator.from_scf(scf, active_space=active_space)
+        ham_xq = MolecularHamiltonianLinearOperator.from_scf(
+            scf, active_space=active_space
+        )
         H = linear_operator_from_xquces_hamiltonian(ham_xq)
         Phi0 = hartree_fock_state(norb, nelec)
 
@@ -165,7 +167,9 @@ def main():
             and x_prev1.shape == x0_seed.shape
         ):
             ao_overlap = pyscf.gto.intor_cross("int1e_ovlp", prev_mol, mol)
-            orbital_overlap = prev_active_mo_coeff.conj().T @ ao_overlap @ active_mo_coeff
+            orbital_overlap = (
+                prev_active_mo_coeff.conj().T @ ao_overlap @ active_mo_coeff
+            )
             x0 = igcr2_param.transfer_parameters_from(
                 x_prev1,
                 previous_parameterization=prev_igcr2_param,
@@ -177,11 +181,15 @@ def main():
 
         # print("params:", len(x0), flush=True)
 
-        psi_seed = igcr2_param.ansatz_from_parameters(x0_seed).apply(Phi0, nelec=nelec, copy=True)
+        psi_seed = igcr2_param.ansatz_from_parameters(x0_seed).apply(
+            Phi0, nelec=nelec, copy=True
+        )
         E_iGCR2_seed = ham_xq.expectation(psi_seed)
 
         def params_to_vec(x):
-            return igcr2_param.ansatz_from_parameters(x).apply(Phi0, nelec=nelec, copy=True)
+            return igcr2_param.ansatz_from_parameters(x).apply(
+                Phi0, nelec=nelec, copy=True
+            )
 
         it_counter = {"k": 0}
 
@@ -189,12 +197,18 @@ def main():
             it_counter["k"] += 1
             energy = float(intermediate_result.fun)
 
-            if hasattr(intermediate_result, "jac") and intermediate_result.jac is not None:
+            if (
+                hasattr(intermediate_result, "jac")
+                and intermediate_result.jac is not None
+            ):
                 gmax = float(np.max(np.abs(intermediate_result.jac)))
             else:
                 gmax = float("nan")
 
-            if hasattr(intermediate_result, "overlap_mat") and intermediate_result.overlap_mat is not None:
+            if (
+                hasattr(intermediate_result, "overlap_mat")
+                and intermediate_result.overlap_mat is not None
+            ):
                 try:
                     cond = float(np.linalg.cond(intermediate_result.overlap_mat))
                 except np.linalg.LinAlgError:

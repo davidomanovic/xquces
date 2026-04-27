@@ -8,7 +8,11 @@ import numpy as np
 import scipy.linalg
 
 from xquces._lib import apply_pair_uccd_doci_unitary_in_place
-from xquces.states import _doci_spatial_basis, _doci_subspace_indices, hartree_fock_state
+from xquces.states import (
+    _doci_spatial_basis,
+    _doci_subspace_indices,
+    hartree_fock_state,
+)
 
 
 @cache
@@ -128,7 +132,11 @@ def pair_uccd_generator_from_parameters(
     expected = len(generators)
     if params.shape != (expected,):
         raise ValueError(f"Expected {(expected,)}, got {params.shape}.")
-    out = np.zeros_like(generators[0]) if generators else np.zeros((1, 1), dtype=np.float64)
+    out = (
+        np.zeros_like(generators[0])
+        if generators
+        else np.zeros((1, 1), dtype=np.float64)
+    )
     for theta, gen in zip(time * params, generators):
         if theta != 0.0:
             out += float(theta) * gen

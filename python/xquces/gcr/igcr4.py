@@ -183,9 +183,13 @@ class IGCR4QuarticReduction:
         cubic_values = np.asarray(cubic_values, dtype=np.float64)
         quartic_values = np.asarray(quartic_values, dtype=np.float64)
         if cubic_values.shape != (self.n_cubic_full,):
-            raise ValueError(f"Expected cubic shape {(self.n_cubic_full,)}, got {cubic_values.shape}.")
+            raise ValueError(
+                f"Expected cubic shape {(self.n_cubic_full,)}, got {cubic_values.shape}."
+            )
         if quartic_values.shape != (self.n_quartic_full,):
-            raise ValueError(f"Expected quartic shape {(self.n_quartic_full,)}, got {quartic_values.shape}.")
+            raise ValueError(
+                f"Expected quartic shape {(self.n_quartic_full,)}, got {quartic_values.shape}."
+            )
 
         basis = self.physical_quartic_basis
         reduced = basis.T @ quartic_values
@@ -288,14 +292,22 @@ def spin_restricted_quartic_seed_from_pair_params(
     rho = np.zeros(len(_default_rho_indices(norb)), dtype=np.float64)
     if rho_scale != 0.0:
         for k, (p, q, r) in enumerate(_default_rho_indices(norb)):
-            rho[k] = float(rho_scale) * (pair[p, q] + pair[p, r] + pair[q, r]) / (3.0 * denom)
+            rho[k] = (
+                float(rho_scale)
+                * (pair[p, q] + pair[p, r] + pair[q, r])
+                / (3.0 * denom)
+            )
 
     sigma = np.zeros(len(_default_sigma_indices(norb)), dtype=np.float64)
     if sigma_scale != 0.0:
         for k, (p, q, r, s) in enumerate(_default_sigma_indices(norb)):
             avg = (
-                pair[p, q] + pair[p, r] + pair[p, s] +
-                pair[q, r] + pair[q, s] + pair[r, s]
+                pair[p, q]
+                + pair[p, r]
+                + pair[p, s]
+                + pair[q, r]
+                + pair[q, s]
+                + pair[r, s]
             ) / 6.0
             sigma[k] = float(sigma_scale) * avg / denom
 
@@ -704,7 +716,13 @@ def relabel_igcr4_ansatz_orbitals(
     omega_old = {idx: val for idx, val in zip(d.omega_indices, d.omega_vector())}
     omega_values = np.asarray(
         [
-            omega_old[tuple(sorted((int(old_for_new[p]), int(old_for_new[q]), int(old_for_new[r]))))]
+            omega_old[
+                tuple(
+                    sorted(
+                        (int(old_for_new[p]), int(old_for_new[q]), int(old_for_new[r]))
+                    )
+                )
+            ]
             for p, q, r in _default_triple_indices(ansatz.norb)
         ],
         dtype=np.float64,
@@ -713,7 +731,11 @@ def relabel_igcr4_ansatz_orbitals(
     eta_old = {idx: val for idx, val in zip(d.eta_indices, d.eta_vector())}
     eta_values = np.asarray(
         [
-            eta_old[(int(old_for_new[p]), int(old_for_new[q])) if old_for_new[p] < old_for_new[q] else (int(old_for_new[q]), int(old_for_new[p]))]
+            eta_old[
+                (int(old_for_new[p]), int(old_for_new[q]))
+                if old_for_new[p] < old_for_new[q]
+                else (int(old_for_new[q]), int(old_for_new[p]))
+            ]
             for p, q in _default_eta_indices(ansatz.norb)
         ],
         dtype=np.float64,
@@ -737,7 +759,18 @@ def relabel_igcr4_ansatz_orbitals(
     sigma_old = {idx: val for idx, val in zip(d.sigma_indices, d.sigma_vector())}
     sigma_values = np.asarray(
         [
-            sigma_old[tuple(sorted((int(old_for_new[p]), int(old_for_new[q]), int(old_for_new[r]), int(old_for_new[s]))))]
+            sigma_old[
+                tuple(
+                    sorted(
+                        (
+                            int(old_for_new[p]),
+                            int(old_for_new[q]),
+                            int(old_for_new[r]),
+                            int(old_for_new[s]),
+                        )
+                    )
+                )
+            ]
             for p, q, r, s in _default_sigma_indices(ansatz.norb)
         ],
         dtype=np.float64,
@@ -810,12 +843,9 @@ class IGCR4SpinRestrictedParameterization:
         _validate_pairs(self.eta_indices_, self.norb, allow_diagonal=False)
         _validate_rho_indices(self.rho_indices_, self.norb)
         _validate_sigma_indices(self.sigma_indices_, self.norb)
-        if (
-            self.left_right_ov_relative_scale is not None
-            and (
-                not np.isfinite(float(self.left_right_ov_relative_scale))
-                or self.left_right_ov_relative_scale <= 0
-            )
+        if self.left_right_ov_relative_scale is not None and (
+            not np.isfinite(float(self.left_right_ov_relative_scale))
+            or self.left_right_ov_relative_scale <= 0
         ):
             raise ValueError("left_right_ov_relative_scale must be positive or None")
 
@@ -993,12 +1023,16 @@ class IGCR4SpinRestrictedParameterization:
         idx = 0
 
         n = self.n_left_orbital_rotation_params
-        left = self._left_orbital_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
+        left = self._left_orbital_chart.unitary_from_parameters(
+            params[idx : idx + n], self.norb
+        )
         idx += n
 
         n = self.n_pair_params
-        pair_sparse_values = np.asarray(params[idx:idx + n], dtype=np.float64)
-        pair_sparse = _symmetric_matrix_from_values(pair_sparse_values, self.norb, self.pair_indices)
+        pair_sparse_values = np.asarray(params[idx : idx + n], dtype=np.float64)
+        pair_sparse = _symmetric_matrix_from_values(
+            pair_sparse_values, self.norb, self.pair_indices
+        )
         pair_values = np.asarray(
             [pair_sparse[p, q] for p, q in _default_pair_indices(self.norb)],
             dtype=np.float64,
@@ -1007,7 +1041,7 @@ class IGCR4SpinRestrictedParameterization:
 
         if self.uses_reduced_cubic_chart:
             n = self.n_tau_params
-            cubic = self.cubic_reduction.full_from_reduced(params[idx:idx + n])
+            cubic = self.cubic_reduction.full_from_reduced(params[idx : idx + n])
             n_tau_full = len(_default_tau_indices(self.norb))
             tau = _ordered_matrix_from_values(
                 cubic[:n_tau_full],
@@ -1018,31 +1052,45 @@ class IGCR4SpinRestrictedParameterization:
             idx += n
         else:
             n = self.n_tau_params
-            tau = _ordered_matrix_from_values(params[idx:idx + n], self.norb, self.tau_indices)
+            tau = _ordered_matrix_from_values(
+                params[idx : idx + n], self.norb, self.tau_indices
+            )
             idx += n
 
             n = self.n_omega_params
-            omega_sparse_values = np.asarray(params[idx:idx + n], dtype=np.float64)
-            omega_sparse = {triple: value for triple, value in zip(self.omega_indices, omega_sparse_values)}
+            omega_sparse_values = np.asarray(params[idx : idx + n], dtype=np.float64)
+            omega_sparse = {
+                triple: value
+                for triple, value in zip(self.omega_indices, omega_sparse_values)
+            }
             omega_values = np.asarray(
-                [omega_sparse.get(triple, 0.0) for triple in _default_triple_indices(self.norb)],
+                [
+                    omega_sparse.get(triple, 0.0)
+                    for triple in _default_triple_indices(self.norb)
+                ],
                 dtype=np.float64,
             )
             idx += n
 
         if self.uses_reduced_quartic_chart:
             n = self.n_rho_params
-            quartic = self.quartic_reduction.full_from_reduced(params[idx:idx + n])
+            quartic = self.quartic_reduction.full_from_reduced(params[idx : idx + n])
             n_eta_full = len(_default_eta_indices(self.norb))
             n_rho_full = len(_default_rho_indices(self.norb))
             eta_values = np.asarray(quartic[:n_eta_full], dtype=np.float64)
-            rho_values = np.asarray(quartic[n_eta_full:n_eta_full + n_rho_full], dtype=np.float64)
-            sigma_values = np.asarray(quartic[n_eta_full + n_rho_full:], dtype=np.float64)
+            rho_values = np.asarray(
+                quartic[n_eta_full : n_eta_full + n_rho_full], dtype=np.float64
+            )
+            sigma_values = np.asarray(
+                quartic[n_eta_full + n_rho_full :], dtype=np.float64
+            )
             idx += n
         else:
             n = self.n_eta_params
-            eta_sparse_values = np.asarray(params[idx:idx + n], dtype=np.float64)
-            eta_sparse = {pair: value for pair, value in zip(self.eta_indices, eta_sparse_values)}
+            eta_sparse_values = np.asarray(params[idx : idx + n], dtype=np.float64)
+            eta_sparse = {
+                pair: value for pair, value in zip(self.eta_indices, eta_sparse_values)
+            }
             eta_values = np.asarray(
                 [eta_sparse.get(pair, 0.0) for pair in _default_eta_indices(self.norb)],
                 dtype=np.float64,
@@ -1050,25 +1098,39 @@ class IGCR4SpinRestrictedParameterization:
             idx += n
 
             n = self.n_rho_params
-            rho_sparse_values = np.asarray(params[idx:idx + n], dtype=np.float64)
-            rho_sparse = {triple: value for triple, value in zip(self.rho_indices, rho_sparse_values)}
+            rho_sparse_values = np.asarray(params[idx : idx + n], dtype=np.float64)
+            rho_sparse = {
+                triple: value
+                for triple, value in zip(self.rho_indices, rho_sparse_values)
+            }
             rho_values = np.asarray(
-                [rho_sparse.get(triple, 0.0) for triple in _default_rho_indices(self.norb)],
+                [
+                    rho_sparse.get(triple, 0.0)
+                    for triple in _default_rho_indices(self.norb)
+                ],
                 dtype=np.float64,
             )
             idx += n
 
             n = self.n_sigma_params
-            sigma_sparse_values = np.asarray(params[idx:idx + n], dtype=np.float64)
-            sigma_sparse = {quad: value for quad, value in zip(self.sigma_indices, sigma_sparse_values)}
+            sigma_sparse_values = np.asarray(params[idx : idx + n], dtype=np.float64)
+            sigma_sparse = {
+                quad: value
+                for quad, value in zip(self.sigma_indices, sigma_sparse_values)
+            }
             sigma_values = np.asarray(
-                [sigma_sparse.get(quad, 0.0) for quad in _default_sigma_indices(self.norb)],
+                [
+                    sigma_sparse.get(quad, 0.0)
+                    for quad in _default_sigma_indices(self.norb)
+                ],
                 dtype=np.float64,
             )
             idx += n
 
         n = self.n_right_orbital_rotation_params
-        final = self.right_orbital_chart.unitary_from_parameters(params[idx:idx + n], self.norb)
+        final = self.right_orbital_chart.unitary_from_parameters(
+            params[idx : idx + n], self.norb
+        )
         right = _right_unitary_from_left_and_final(left, final, self.nocc)
 
         return IGCR4Ansatz(
@@ -1120,82 +1182,107 @@ class IGCR4SpinRestrictedParameterization:
 
         cubic_onebody_phase = np.zeros(self.norb, dtype=np.float64)
         if self.uses_reduced_cubic_chart:
-            reduced_pair_values, reduced_cubic_values, cubic_onebody_phase = self.cubic_reduction.reduce_full(
-                full_pair_values,
-                full_cubic,
+            reduced_pair_values, reduced_cubic_values, cubic_onebody_phase = (
+                self.cubic_reduction.reduce_full(
+                    full_pair_values,
+                    full_cubic,
+                )
             )
         else:
             reduced_pair_values = None
             reduced_cubic_values = None
 
-        phase_vec = _restricted_left_phase_vector(d.full_double(), self.nocc) + cubic_onebody_phase
-        left_eff = np.asarray(ansatz.left, dtype=np.complex128) @ _diag_unitary(phase_vec)
+        phase_vec = (
+            _restricted_left_phase_vector(d.full_double(), self.nocc)
+            + cubic_onebody_phase
+        )
+        left_eff = np.asarray(ansatz.left, dtype=np.complex128) @ _diag_unitary(
+            phase_vec
+        )
         left_chart = self._left_orbital_chart
         if hasattr(left_chart, "parameters_and_right_phase_from_unitary"):
-            left_params, right_phase = left_chart.parameters_and_right_phase_from_unitary(left_eff)
+            left_params, right_phase = (
+                left_chart.parameters_and_right_phase_from_unitary(left_eff)
+            )
         else:
             left_params = left_chart.parameters_from_unitary(left_eff)
             right_phase = np.zeros(self.norb, dtype=np.float64)
 
-        right_eff = _diag_unitary(right_phase) @ np.asarray(ansatz.right, dtype=np.complex128)
+        right_eff = _diag_unitary(right_phase) @ np.asarray(
+            ansatz.right, dtype=np.complex128
+        )
 
         out = np.zeros(self.n_params, dtype=np.float64)
         idx = 0
 
         n = self.n_left_orbital_rotation_params
-        out[idx:idx + n] = left_params
+        out[idx : idx + n] = left_params
         idx += n
 
         n = self.n_pair_params
         if self.uses_reduced_cubic_chart:
-            out[idx:idx + n] = reduced_pair_values
+            out[idx : idx + n] = reduced_pair_values
         else:
-            out[idx:idx + n] = np.asarray([pair_eff[p, q] for p, q in self.pair_indices], dtype=np.float64)
+            out[idx : idx + n] = np.asarray(
+                [pair_eff[p, q] for p, q in self.pair_indices], dtype=np.float64
+            )
         idx += n
 
         if self.uses_reduced_cubic_chart:
             n = self.n_tau_params
-            out[idx:idx + n] = reduced_cubic_values
+            out[idx : idx + n] = reduced_cubic_values
             idx += n
         else:
             n = self.n_tau_params
-            out[idx:idx + n] = _values_from_ordered_matrix(tau, self.tau_indices)
+            out[idx : idx + n] = _values_from_ordered_matrix(tau, self.tau_indices)
             idx += n
 
             n = self.n_omega_params
-            full_omega = {triple: value for value, triple in zip(omega, d.omega_indices)}
-            out[idx:idx + n] = np.asarray([full_omega[t] for t in self.omega_indices], dtype=np.float64)
+            full_omega = {
+                triple: value for value, triple in zip(omega, d.omega_indices)
+            }
+            out[idx : idx + n] = np.asarray(
+                [full_omega[t] for t in self.omega_indices], dtype=np.float64
+            )
             idx += n
 
         if self.uses_reduced_quartic_chart:
             n = self.n_rho_params
-            out[idx:idx + n] = reduced_quartic_values
+            out[idx : idx + n] = reduced_quartic_values
             idx += n
         else:
             n = self.n_eta_params
             full_eta = {pair: value for value, pair in zip(eta, d.eta_indices)}
-            out[idx:idx + n] = np.asarray([full_eta[t] for t in self.eta_indices], dtype=np.float64)
+            out[idx : idx + n] = np.asarray(
+                [full_eta[t] for t in self.eta_indices], dtype=np.float64
+            )
             idx += n
 
             n = self.n_rho_params
             full_rho = {triple: value for value, triple in zip(rho, d.rho_indices)}
-            out[idx:idx + n] = np.asarray([full_rho[t] for t in self.rho_indices], dtype=np.float64)
+            out[idx : idx + n] = np.asarray(
+                [full_rho[t] for t in self.rho_indices], dtype=np.float64
+            )
             idx += n
 
             n = self.n_sigma_params
             full_sigma = {quad: value for value, quad in zip(sigma, d.sigma_indices)}
-            out[idx:idx + n] = np.asarray([full_sigma[t] for t in self.sigma_indices], dtype=np.float64)
+            out[idx : idx + n] = np.asarray(
+                [full_sigma[t] for t in self.sigma_indices], dtype=np.float64
+            )
             idx += n
 
         n = self.n_right_orbital_rotation_params
-        left_param_unitary = self._left_orbital_chart.unitary_from_parameters(left_params, self.norb)
+        left_param_unitary = self._left_orbital_chart.unitary_from_parameters(
+            left_params, self.norb
+        )
         final_eff = _final_unitary_from_left_and_right(
             left_param_unitary,
             right_eff,
             self.nocc,
             project_reference_ov=self.right_orbital_chart_override is None,
         )
-        out[idx:idx + n] = self.right_orbital_chart.parameters_from_unitary(final_eff)
+        out[idx : idx + n] = self.right_orbital_chart.parameters_from_unitary(final_eff)
 
         return self._public_parameters_from_native(out)
 
@@ -1294,10 +1381,14 @@ class IGCR4SpinRestrictedParameterization:
             previous_parameterization = self
         ansatz = previous_parameterization.ansatz_from_parameters(previous_parameters)
         if ansatz.nocc != self.nocc:
-            raise ValueError("previous ansatz nocc does not match this parameterization")
+            raise ValueError(
+                "previous ansatz nocc does not match this parameterization"
+            )
         if orbital_overlap is not None:
             if old_for_new is not None or phases is not None:
-                raise ValueError("Pass either orbital_overlap or explicit relabeling, not both.")
+                raise ValueError(
+                    "Pass either orbital_overlap or explicit relabeling, not both."
+                )
             del block_diagonal
             basis_change = orbital_transport_unitary_from_overlap(orbital_overlap)
             if isinstance(ansatz, IGCR4Ansatz):
@@ -1307,7 +1398,9 @@ class IGCR4SpinRestrictedParameterization:
             elif isinstance(ansatz, IGCR2Ansatz):
                 ansatz = transport_igcr2_ansatz_orbitals(ansatz, basis_change)
             else:
-                raise TypeError(f"Unsupported ansatz type for transfer: {type(ansatz)!r}")
+                raise TypeError(
+                    f"Unsupported ansatz type for transfer: {type(ansatz)!r}"
+                )
         elif old_for_new is not None:
             if isinstance(ansatz, IGCR4Ansatz):
                 ansatz = relabel_igcr4_ansatz_orbitals(ansatz, old_for_new, phases)
@@ -1316,7 +1409,9 @@ class IGCR4SpinRestrictedParameterization:
             elif isinstance(ansatz, IGCR2Ansatz):
                 ansatz = relabel_igcr2_ansatz_orbitals(ansatz, old_for_new, phases)
             else:
-                raise TypeError(f"Unsupported ansatz type for transfer: {type(ansatz)!r}")
+                raise TypeError(
+                    f"Unsupported ansatz type for transfer: {type(ansatz)!r}"
+                )
         if isinstance(ansatz, IGCR4Ansatz):
             return self.parameters_from_ansatz(ansatz)
         if isinstance(ansatz, IGCR3Ansatz):
@@ -1325,11 +1420,43 @@ class IGCR4SpinRestrictedParameterization:
             return self.parameters_from_igcr2_ansatz(ansatz)
         raise TypeError(f"Unsupported ansatz type for transfer: {type(ansatz)!r}")
 
-    def params_to_vec(self, reference_vec: np.ndarray, nelec: tuple[int, int]) -> Callable[[np.ndarray], np.ndarray]:
+    def apply(
+        self,
+        reference: object,
+        nelec: tuple[int, int] | None = None,
+    ):
+        from dataclasses import replace
+
+        from xquces.gcr.bridge_gcr2 import GCR2FullUnitaryChart
+        from xquces.state_parameterization import (
+            apply_ansatz_parameterization,
+            reference_is_hartree_fock_state,
+        )
+
+        if nelec is None:
+            nelec = (self.nocc, self.nocc)
+        nelec = tuple(int(x) for x in nelec)
+        parameterization = self
+        use_full_right = (
+            self.right_orbital_chart_override is None
+            and not reference_is_hartree_fock_state(reference, self.norb, nelec)
+        )
+        if use_full_right:
+            parameterization = replace(
+                self,
+                right_orbital_chart_override=GCR2FullUnitaryChart(),
+            )
+        return apply_ansatz_parameterization(parameterization, reference, nelec)
+
+    def params_to_vec(
+        self, reference_vec: np.ndarray, nelec: tuple[int, int]
+    ) -> Callable[[np.ndarray], np.ndarray]:
         reference_vec = np.asarray(reference_vec, dtype=np.complex128)
 
         def func(params: np.ndarray) -> np.ndarray:
-            return self.ansatz_from_parameters(params).apply(reference_vec, nelec=nelec, copy=True)
+            return self.ansatz_from_parameters(params).apply(
+                reference_vec, nelec=nelec, copy=True
+            )
 
         return func
 

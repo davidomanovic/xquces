@@ -54,7 +54,9 @@ class GCR2FullUnitaryChart:
         unitary = np.asarray(unitary, dtype=np.complex128)
         if unitary.ndim != 2 or unitary.shape[0] != unitary.shape[1]:
             raise ValueError("unitary must be square")
-        if not np.allclose(unitary.conj().T @ unitary, np.eye(unitary.shape[0]), atol=1e-10):
+        if not np.allclose(
+            unitary.conj().T @ unitary, np.eye(unitary.shape[0]), atol=1e-10
+        ):
             raise ValueError("unitary must be unitary")
         generator = scipy.linalg.logm(unitary)
         generator = 0.5 * (generator - generator.conj().T)
@@ -82,7 +84,9 @@ class GCR2SplitBridgeAnsatz:
     nocc: int
     pairs: tuple[tuple[int, int], ...]
 
-    def apply(self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True) -> np.ndarray:
+    def apply(
+        self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True
+    ) -> np.ndarray:
         out = apply_orbital_rotation(
             vec,
             self.right,
@@ -128,7 +132,9 @@ class GCR2UntiedSplitBridgeAnsatz:
     nocc: int
     pairs: tuple[tuple[int, int], ...]
 
-    def apply(self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True) -> np.ndarray:
+    def apply(
+        self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True
+    ) -> np.ndarray:
         out = apply_orbital_rotation(
             vec,
             self.right,
@@ -223,7 +229,9 @@ class GCR2SplitBridgeParameterization:
             + self.n_right_orbital_rotation_params
         )
 
-    def _split(self, params: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def _split(
+        self, params: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         params = np.asarray(params, dtype=np.float64)
         if params.shape != (self.n_params,):
             raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
@@ -323,9 +331,7 @@ class GCR2SplitBridgeParameterization:
         unitary: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
         if hasattr(chart, "parameters_and_right_phase_from_unitary"):
-            params, right_phase = (
-                chart.parameters_and_right_phase_from_unitary(unitary)
-            )
+            params, right_phase = chart.parameters_and_right_phase_from_unitary(unitary)
         else:
             params = chart.parameters_from_unitary(unitary)
             right_phase = np.zeros(self.norb, dtype=np.float64)

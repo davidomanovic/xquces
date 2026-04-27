@@ -5,7 +5,13 @@ from dataclasses import dataclass
 
 import numpy as np
 from ffsim.qiskit.gates import PrepareSlaterDeterminantJW
-from qiskit.circuit import CircuitInstruction, Gate, QuantumCircuit, QuantumRegister, Qubit
+from qiskit.circuit import (
+    CircuitInstruction,
+    Gate,
+    QuantumCircuit,
+    QuantumRegister,
+    Qubit,
+)
 
 from xquces.gcr.igcr2 import IGCR2Ansatz, IGCR2SpinBalancedSpec, IGCR2SpinRestrictedSpec
 from xquces.qiskit.gates.diag_2 import (
@@ -89,9 +95,7 @@ def _additive_pair_sparsifying_shift(
         others = [p for p in range(norb) if p != anchor]
         for i, p in enumerate(others):
             for q in others[i + 1 :]:
-                anchor_shift = 0.5 * (
-                    mat[p, q] - mat[anchor, p] - mat[anchor, q]
-                )
+                anchor_shift = 0.5 * (mat[p, q] - mat[anchor, p] - mat[anchor, q])
                 shift = np.zeros(norb, dtype=np.float64)
                 shift[anchor] = anchor_shift
                 for r in others:
@@ -187,9 +191,7 @@ def spin_balanced_circuit_gauge(
     same_sparse = _zero_small_values(same_sparse, atol)
     mixed_sparse = _zero_small_values(mixed_sparse, atol)
 
-    added_one_body_phase = (
-        (ansatz.nocc - 1) * same_shift + ansatz.nocc * mixed_shift
-    )
+    added_one_body_phase = (ansatz.nocc - 1) * same_shift + ansatz.nocc * mixed_shift
     left_phase = initial_left_phase - added_one_body_phase
     left = np.asarray(ansatz.left, dtype=np.complex128) @ _diag_unitary(left_phase)
 

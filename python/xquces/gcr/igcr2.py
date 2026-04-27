@@ -952,6 +952,34 @@ class IGCR2SpinRestrictedParameterization:
             ansatz = relabel_igcr2_ansatz_orbitals(ansatz, old_for_new, phases)
         return self.parameters_from_ansatz(ansatz)
 
+    def apply(
+        self,
+        reference: object,
+        nelec: tuple[int, int] | None = None,
+    ):
+        from dataclasses import replace
+
+        from xquces.gcr.bridge_gcr2 import GCR2FullUnitaryChart
+        from xquces.state_parameterization import (
+            apply_ansatz_parameterization,
+            reference_is_hartree_fock_state,
+        )
+
+        if nelec is None:
+            nelec = (self.nocc, self.nocc)
+        nelec = tuple(int(x) for x in nelec)
+        parameterization = self
+        use_full_right = (
+            self.right_orbital_chart_override is None
+            and not reference_is_hartree_fock_state(reference, self.norb, nelec)
+        )
+        if use_full_right:
+            parameterization = replace(
+                self,
+                right_orbital_chart_override=GCR2FullUnitaryChart(),
+            )
+        return apply_ansatz_parameterization(parameterization, reference, nelec)
+
     def params_to_vec(
         self, reference_vec: np.ndarray, nelec: tuple[int, int]
     ) -> Callable[[np.ndarray], np.ndarray]:

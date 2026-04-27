@@ -80,7 +80,9 @@ def _givens_pairs(norb: int) -> list[tuple[int, int]]:
     return pairs
 
 
-def _givens_zeroing_matrix(a: complex, b: complex, tol: float = 1e-14) -> tuple[float, float, np.ndarray]:
+def _givens_zeroing_matrix(
+    a: complex, b: complex, tol: float = 1e-14
+) -> tuple[float, float, np.ndarray]:
     if abs(b) < tol:
         c = 1.0
         s = 0.0j
@@ -122,7 +124,9 @@ def exact_internal_gauge_fixed_parameters_from_unitary(u: np.ndarray) -> np.ndar
     return params
 
 
-def exact_internal_gauge_fixed_unitary_from_parameters(params: np.ndarray, norb: int) -> np.ndarray:
+def exact_internal_gauge_fixed_unitary_from_parameters(
+    params: np.ndarray, norb: int
+) -> np.ndarray:
     params = np.asarray(params, dtype=np.float64)
     expected = norb * (norb - 1)
     if params.shape != (expected,):
@@ -163,7 +167,9 @@ def ov_unitary_from_parameters(params: np.ndarray, nocc: int, nvirt: int) -> np.
     return canonicalize_unitary(np.asarray(u, dtype=np.complex128))
 
 
-def exact_ov_parameters_from_unitary(u: np.ndarray, nocc: int, nvirt: int) -> np.ndarray:
+def exact_ov_parameters_from_unitary(
+    u: np.ndarray, nocc: int, nvirt: int
+) -> np.ndarray:
     u = canonicalize_unitary(np.asarray(u, dtype=np.complex128))
     _assert_square_matrix(u, "u")
     norb = nocc + nvirt
@@ -250,7 +256,9 @@ class OccupiedVirtualUnitaryChart:
             raise ValueError("norb does not match chart dimensions")
         return 2 * self.nocc * self.nvirt
 
-    def unitary_from_parameters(self, params: np.ndarray, norb: int | None = None) -> np.ndarray:
+    def unitary_from_parameters(
+        self, params: np.ndarray, norb: int | None = None
+    ) -> np.ndarray:
         if norb is not None and norb != self.norb:
             raise ValueError("norb does not match chart dimensions")
         return ov_unitary_from_parameters(params, self.nocc, self.nvirt)
@@ -292,7 +300,7 @@ def exact_full_unitary_from_parameters(params: np.ndarray, norb: int) -> np.ndar
         block = np.eye(norb, dtype=np.complex128)
         block[np.ix_([p, qrow], [p, qrow])] = _givens_dagger_from_angles(theta, phi)
         out = out @ block
-    out = out @ np.diag(np.exp(1j * params[idx:idx + norb]))
+    out = out @ np.diag(np.exp(1j * params[idx : idx + norb]))
     return out
 
 

@@ -141,7 +141,9 @@ def _real_amplitudes_from_complex_vector(vec: np.ndarray) -> np.ndarray:
         phase = np.exp(-1j * np.angle(out[int(nz[0])]))
         out = out * phase
     if np.linalg.norm(np.imag(out)) > 1e-10:
-        raise ValueError("this DOCI parameterization only supports real DOCI amplitudes")
+        raise ValueError(
+            "this DOCI parameterization only supports real DOCI amplitudes"
+        )
     return _canonicalize_real_amplitudes(np.real(out))
 
 
@@ -232,7 +234,9 @@ def doci_params_from_state(
     norb: int,
     nelec: tuple[int, int],
 ) -> np.ndarray:
-    return doci_parameters_from_amplitudes(doci_amplitudes_from_state(state, norb, nelec))
+    return doci_parameters_from_amplitudes(
+        doci_amplitudes_from_state(state, norb, nelec)
+    )
 
 
 def doci_state(
@@ -253,7 +257,9 @@ def doci_state(
     elif params is not None:
         amps = doci_amplitudes_from_parameters(norb, nelec, params)
     else:
-        amps = _real_amplitudes_from_complex_vector(np.asarray(amplitudes, dtype=np.complex128))
+        amps = _real_amplitudes_from_complex_vector(
+            np.asarray(amplitudes, dtype=np.complex128)
+        )
         expected = doci_dimension(norb, nelec)
         if amps.shape != (expected,):
             raise ValueError(f"Expected {(expected,)}, got {amps.shape}.")
@@ -305,7 +311,9 @@ def apply_doci_unitary(
     if params is not None:
         amps = doci_amplitudes_from_parameters(norb, nelec, params)
     else:
-        amps = _real_amplitudes_from_complex_vector(np.asarray(amplitudes, dtype=np.complex128))
+        amps = _real_amplitudes_from_complex_vector(
+            np.asarray(amplitudes, dtype=np.complex128)
+        )
         expected = doci_dimension(norb, nelec)
         if amps.shape != (expected,):
             raise ValueError(f"Expected {(expected,)}, got {amps.shape}.")

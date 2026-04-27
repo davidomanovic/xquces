@@ -19,7 +19,11 @@ from threadpoolctl import threadpool_limits
 
 from xquces.gcr import GCR2DOCIReferenceParameterization, make_restricted_gcr_jacobian
 from xquces.gcr.igcr2 import orbital_relabeling_from_overlap
-from xquces.optimize import build_dense_hamiltonian, make_state_objective, minimize_linear_method
+from xquces.optimize import (
+    build_dense_hamiltonian,
+    make_state_objective,
+    minimize_linear_method,
+)
 from xquces.ucj.init import UCJRestrictedProjectedDFSeed
 from xquces.utils import (
     active_hamiltonian_from_casscf,
@@ -361,7 +365,9 @@ def main() -> None:
                 )
 
             if previous_record is not None and use_orbital_alignment:
-                active_mo = align_active_orbitals_to_previous(casscf, previous_record, mol)
+                active_mo = align_active_orbitals_to_previous(
+                    casscf, previous_record, mol
+                )
             else:
                 active_mo = active_mo_coeff_from_casscf(casscf)
 

@@ -48,7 +48,9 @@ class GCR3DOCIReferenceAnsatz:
     def diagonal(self):
         return self.base_ansatz.diagonal
 
-    def apply(self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True) -> np.ndarray:
+    def apply(
+        self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True
+    ) -> np.ndarray:
         out = apply_doci_reference_global(
             vec,
             self.doci_reference_params,
@@ -100,7 +102,11 @@ class GCR3DOCIReferenceParameterization:
 
     @property
     def n_diag_params(self) -> int:
-        return self._base.n_params - self._base.n_left_orbital_rotation_params - self._base.n_right_orbital_rotation_params
+        return (
+            self._base.n_params
+            - self._base.n_left_orbital_rotation_params
+            - self._base.n_right_orbital_rotation_params
+        )
 
     @property
     def n_pair_params(self) -> int:
@@ -124,13 +130,24 @@ class GCR3DOCIReferenceParameterization:
 
     @property
     def _right_orbital_rotation_start(self) -> int:
-        return self.n_left_orbital_rotation_params + self.n_diag_params + self.n_doci_reference_params
+        return (
+            self.n_left_orbital_rotation_params
+            + self.n_diag_params
+            + self.n_doci_reference_params
+        )
 
     @property
     def n_params(self) -> int:
-        return self.n_left_orbital_rotation_params + self.n_diag_params + self.n_doci_reference_params + self.n_middle_orbital_rotation_params
+        return (
+            self.n_left_orbital_rotation_params
+            + self.n_diag_params
+            + self.n_doci_reference_params
+            + self.n_middle_orbital_rotation_params
+        )
 
-    def _split(self, params: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def _split(
+        self, params: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         params = np.asarray(params, dtype=np.float64)
         if params.shape != (self.n_params,):
             raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
@@ -146,15 +163,21 @@ class GCR3DOCIReferenceParameterization:
     def _zero_diagonal(self) -> IGCR3SpinRestrictedSpec:
         return IGCR3SpinRestrictedSpec(
             double_params=np.zeros(self.norb, dtype=np.float64),
-            pair_values=np.zeros(len(_default_pair_indices(self.norb)), dtype=np.float64),
+            pair_values=np.zeros(
+                len(_default_pair_indices(self.norb)), dtype=np.float64
+            ),
             tau=np.zeros((self.norb, self.norb), dtype=np.float64),
-            omega_values=np.zeros(len(_default_triple_indices(self.norb)), dtype=np.float64),
+            omega_values=np.zeros(
+                len(_default_triple_indices(self.norb)), dtype=np.float64
+            ),
         )
 
     def _identity_orbital_rotation(self) -> np.ndarray:
         return np.eye(self.norb, dtype=np.complex128)
 
-    def _base_params_from_split(self, left: np.ndarray, diag: np.ndarray, right: np.ndarray) -> np.ndarray:
+    def _base_params_from_split(
+        self, left: np.ndarray, diag: np.ndarray, right: np.ndarray
+    ) -> np.ndarray:
         return np.concatenate([left, diag, right]).astype(np.float64, copy=False)
 
     def _extract_full_rotation_params(self, unitary: np.ndarray) -> np.ndarray:
@@ -165,7 +188,9 @@ class GCR3DOCIReferenceParameterization:
             nocc=self.nocc,
         )
         base_params = self._base.parameters_from_ansatz(dummy)
-        return np.asarray(base_params[: self.n_left_orbital_rotation_params], dtype=np.float64)
+        return np.asarray(
+            base_params[: self.n_left_orbital_rotation_params], dtype=np.float64
+        )
 
     def _transfer_full_rotation_params(
         self,
@@ -176,7 +201,9 @@ class GCR3DOCIReferenceParameterization:
         block_diagonal: bool,
     ) -> np.ndarray:
         prev = np.zeros(previous_base.n_params, dtype=np.float64)
-        prev[: previous_base.n_left_orbital_rotation_params] = np.asarray(params, dtype=np.float64)
+        prev[: previous_base.n_left_orbital_rotation_params] = np.asarray(
+            params, dtype=np.float64
+        )
         transferred = self._base.transfer_parameters_from(
             prev,
             previous_parameterization=previous_base,
@@ -185,7 +212,9 @@ class GCR3DOCIReferenceParameterization:
             orbital_overlap=None,
             block_diagonal=block_diagonal,
         )
-        return np.asarray(transferred[: self.n_left_orbital_rotation_params], dtype=np.float64)
+        return np.asarray(
+            transferred[: self.n_left_orbital_rotation_params], dtype=np.float64
+        )
 
     def ansatz_from_parameters(self, params: np.ndarray) -> GCR3DOCIReferenceAnsatz:
         left, diag, doci_reference, middle = self._split(params)
@@ -196,36 +225,48 @@ class GCR3DOCIReferenceParameterization:
                 np.zeros(self._base.n_right_orbital_rotation_params, dtype=np.float64),
             )
         )
-        mid_unitary = self._mid_orbital_chart.unitary_from_parameters(np.asarray(middle, dtype=np.float64), self.norb)
+        mid_unitary = self._mid_orbital_chart.unitary_from_parameters(
+            np.asarray(middle, dtype=np.float64), self.norb
+        )
         return GCR3DOCIReferenceAnsatz(
             base_ansatz=base_ansatz,
             doci_reference_params=np.asarray(doci_reference, dtype=np.float64),
             middle=np.asarray(mid_unitary, dtype=np.complex128),
         )
 
-    def parameters_from_ansatz(self, ansatz: GCR3DOCIReferenceAnsatz | IGCR3Ansatz) -> np.ndarray:
+    def parameters_from_ansatz(
+        self, ansatz: GCR3DOCIReferenceAnsatz | IGCR3Ansatz
+    ) -> np.ndarray:
         if isinstance(ansatz, GCR3DOCIReferenceAnsatz):
             base_params = self._base.parameters_from_ansatz(ansatz.base_ansatz)
-            left = np.asarray(base_params[: self.n_left_orbital_rotation_params], dtype=np.float64)
+            left = np.asarray(
+                base_params[: self.n_left_orbital_rotation_params], dtype=np.float64
+            )
             diag = np.asarray(
                 base_params[
-                    self.n_left_orbital_rotation_params : self.n_left_orbital_rotation_params + self.n_diag_params
+                    self.n_left_orbital_rotation_params : self.n_left_orbital_rotation_params
+                    + self.n_diag_params
                 ],
                 dtype=np.float64,
             )
             middle = self._extract_full_rotation_params(ansatz.middle)
-            return np.concatenate([
-                left,
-                diag,
-                np.asarray(ansatz.doci_reference_params, dtype=np.float64),
-                middle,
-            ])
+            return np.concatenate(
+                [
+                    left,
+                    diag,
+                    np.asarray(ansatz.doci_reference_params, dtype=np.float64),
+                    middle,
+                ]
+            )
         if isinstance(ansatz, IGCR3Ansatz):
             base_params = self._base.parameters_from_ansatz(ansatz)
-            left = np.asarray(base_params[: self.n_left_orbital_rotation_params], dtype=np.float64)
+            left = np.asarray(
+                base_params[: self.n_left_orbital_rotation_params], dtype=np.float64
+            )
             diag = np.asarray(
                 base_params[
-                    self.n_left_orbital_rotation_params : self.n_left_orbital_rotation_params + self.n_diag_params
+                    self.n_left_orbital_rotation_params : self.n_left_orbital_rotation_params
+                    + self.n_diag_params
                 ],
                 dtype=np.float64,
             )
@@ -236,10 +277,13 @@ class GCR3DOCIReferenceParameterization:
 
     def parameters_from_ucj_ansatz(self, ansatz: UCJAnsatz) -> np.ndarray:
         base_params = self._base.parameters_from_ucj_ansatz(ansatz)
-        left = np.asarray(base_params[: self.n_left_orbital_rotation_params], dtype=np.float64)
+        left = np.asarray(
+            base_params[: self.n_left_orbital_rotation_params], dtype=np.float64
+        )
         diag = np.asarray(
             base_params[
-                self.n_left_orbital_rotation_params : self.n_left_orbital_rotation_params + self.n_diag_params
+                self.n_left_orbital_rotation_params : self.n_left_orbital_rotation_params
+                + self.n_diag_params
             ],
             dtype=np.float64,
         )
@@ -260,7 +304,9 @@ class GCR3DOCIReferenceParameterization:
             previous_parameterization = self
         if orbital_overlap is not None:
             if old_for_new is not None or phases is not None:
-                raise ValueError("Pass either orbital_overlap or explicit relabeling, not both.")
+                raise ValueError(
+                    "Pass either orbital_overlap or explicit relabeling, not both."
+                )
             old_for_new, phases = orbital_relabeling_from_overlap(
                 orbital_overlap,
                 nocc=self.nocc,
@@ -269,7 +315,9 @@ class GCR3DOCIReferenceParameterization:
         if isinstance(previous_parameterization, GCR3DOCIReferenceParameterization):
             prev = np.asarray(previous_parameters, dtype=np.float64)
             if prev.shape != (previous_parameterization.n_params,):
-                raise ValueError(f"Expected {(previous_parameterization.n_params,)}, got {prev.shape}.")
+                raise ValueError(
+                    f"Expected {(previous_parameterization.n_params,)}, got {prev.shape}."
+                )
             if (
                 previous_parameterization.norb == self.norb
                 and previous_parameterization.nocc == self.nocc
@@ -277,12 +325,17 @@ class GCR3DOCIReferenceParameterization:
                 and phases is None
             ):
                 return np.array(prev, copy=True)
-            prev_left, prev_diag, prev_doci_reference, prev_middle = previous_parameterization._split(prev)
+            prev_left, prev_diag, prev_doci_reference, prev_middle = (
+                previous_parameterization._split(prev)
+            )
             base_params = self._base.transfer_parameters_from(
                 previous_parameterization._base_params_from_split(
                     prev_left,
                     prev_diag,
-                    np.zeros(previous_parameterization._base.n_right_orbital_rotation_params, dtype=np.float64),
+                    np.zeros(
+                        previous_parameterization._base.n_right_orbital_rotation_params,
+                        dtype=np.float64,
+                    ),
                 ),
                 previous_parameterization=previous_parameterization._base,
                 old_for_new=old_for_new,
@@ -290,10 +343,13 @@ class GCR3DOCIReferenceParameterization:
                 orbital_overlap=None,
                 block_diagonal=block_diagonal,
             )
-            left = np.asarray(base_params[: self.n_left_orbital_rotation_params], dtype=np.float64)
+            left = np.asarray(
+                base_params[: self.n_left_orbital_rotation_params], dtype=np.float64
+            )
             diag = np.asarray(
                 base_params[
-                    self.n_left_orbital_rotation_params : self.n_left_orbital_rotation_params + self.n_diag_params
+                    self.n_left_orbital_rotation_params : self.n_left_orbital_rotation_params
+                    + self.n_diag_params
                 ],
                 dtype=np.float64,
             )
@@ -320,10 +376,13 @@ class GCR3DOCIReferenceParameterization:
             orbital_overlap=None,
             block_diagonal=block_diagonal,
         )
-        left = np.asarray(base_params[: self.n_left_orbital_rotation_params], dtype=np.float64)
+        left = np.asarray(
+            base_params[: self.n_left_orbital_rotation_params], dtype=np.float64
+        )
         diag = np.asarray(
             base_params[
-                self.n_left_orbital_rotation_params : self.n_left_orbital_rotation_params + self.n_diag_params
+                self.n_left_orbital_rotation_params : self.n_left_orbital_rotation_params
+                + self.n_diag_params
             ],
             dtype=np.float64,
         )
@@ -331,8 +390,14 @@ class GCR3DOCIReferenceParameterization:
         middle = np.zeros(self.n_middle_orbital_rotation_params, dtype=np.float64)
         return np.concatenate([left, diag, doci_reference, middle])
 
-    def params_to_vec(self, reference_vec: np.ndarray, nelec: tuple[int, int]) -> Callable[[np.ndarray], np.ndarray]:
+    def params_to_vec(
+        self, reference_vec: np.ndarray, nelec: tuple[int, int]
+    ) -> Callable[[np.ndarray], np.ndarray]:
         reference_vec = np.asarray(reference_vec, dtype=np.complex128)
+
         def func(params: np.ndarray) -> np.ndarray:
-            return self.ansatz_from_parameters(params).apply(reference_vec, nelec=nelec, copy=True)
+            return self.ansatz_from_parameters(params).apply(
+                reference_vec, nelec=nelec, copy=True
+            )
+
         return func

@@ -19,7 +19,9 @@ def validate_interaction_pairs(
     if interaction_pairs is None:
         return
     if len(set(interaction_pairs)) != len(interaction_pairs):
-        raise ValueError(f"Duplicate interaction pairs encountered: {interaction_pairs}.")
+        raise ValueError(
+            f"Duplicate interaction pairs encountered: {interaction_pairs}."
+        )
     if not ordered:
         for i, j in interaction_pairs:
             if i > j:
@@ -46,20 +48,33 @@ def interaction_pairs_spin_balanced(
     if connectivity == "square":
         return [(p, p + 1) for p in range(norb - 1)], [(p, p) for p in range(norb)]
     if connectivity == "hex":
-        return [(p, p + 1) for p in range(norb - 1)], [(p, p) for p in range(norb) if p % 2 == 0]
+        return [(p, p + 1) for p in range(norb - 1)], [
+            (p, p) for p in range(norb) if p % 2 == 0
+        ]
     if connectivity == "heavy-hex":
-        return [(p, p + 1) for p in range(norb - 1)], [(p, p) for p in range(norb) if p % 4 == 0]
+        return [(p, p + 1) for p in range(norb - 1)], [
+            (p, p) for p in range(norb) if p % 4 == 0
+        ]
     raise ValueError(f"Invalid connectivity: {connectivity}")
 
 
 def is_unitary(mat: np.ndarray, rtol: float = 1e-5, atol: float = 1e-8) -> bool:
     mat = np.asarray(mat)
-    return mat.ndim == 2 and mat.shape[0] == mat.shape[1] and np.allclose(mat.conj().T @ mat, np.eye(mat.shape[0]), rtol=rtol, atol=atol)
+    return (
+        mat.ndim == 2
+        and mat.shape[0] == mat.shape[1]
+        and np.allclose(mat.conj().T @ mat, np.eye(mat.shape[0]), rtol=rtol, atol=atol)
+    )
 
 
 def is_real_symmetric(mat: np.ndarray, rtol: float = 1e-5, atol: float = 1e-8) -> bool:
     mat = np.asarray(mat)
-    return np.isrealobj(mat) and mat.ndim == 2 and mat.shape[0] == mat.shape[1] and np.allclose(mat, mat.T, rtol=rtol, atol=atol)
+    return (
+        np.isrealobj(mat)
+        and mat.ndim == 2
+        and mat.shape[0] == mat.shape[1]
+        and np.allclose(mat, mat.T, rtol=rtol, atol=atol)
+    )
 
 
 def antihermitian_to_parameters(mat: np.ndarray, real: bool = False) -> np.ndarray:
@@ -75,7 +90,9 @@ def antihermitian_to_parameters(mat: np.ndarray, real: bool = False) -> np.ndarr
     return params
 
 
-def antihermitian_from_parameters(params: np.ndarray, dim: int, real: bool = False) -> np.ndarray:
+def antihermitian_from_parameters(
+    params: np.ndarray, dim: int, real: bool = False
+) -> np.ndarray:
     params = np.asarray(params, dtype=float)
     n_triu = dim * (dim - 1) // 2
     n_params = n_triu if real else dim**2
@@ -98,7 +115,9 @@ def unitary_to_parameters(mat: np.ndarray, real: bool = False) -> np.ndarray:
     return antihermitian_to_parameters(scipy.linalg.logm(np.asarray(mat)), real=real)
 
 
-def unitary_from_parameters(params: np.ndarray, dim: int, real: bool = False) -> np.ndarray:
+def unitary_from_parameters(
+    params: np.ndarray, dim: int, real: bool = False
+) -> np.ndarray:
     return scipy.linalg.expm(antihermitian_from_parameters(params, dim, real=real))
 
 
@@ -141,10 +160,16 @@ def double_factorized_t2(
     if max_terms is not None and max_terms < 1:
         raise ValueError(f"max_terms must be at least 1. Got {max_terms}.")
     if optimize:
-        raise NotImplementedError("optimize=True is not implemented in xquces native UCJ utilities.")
+        raise NotImplementedError(
+            "optimize=True is not implemented in xquces native UCJ utilities."
+        )
     nocc, _, nvrt, _ = t2_amplitudes.shape
     norb = nocc + nvrt
-    t2_mat = np.asarray(t2_amplitudes).transpose(0, 2, 1, 3).reshape(nocc * nvrt, nocc * nvrt)
+    t2_mat = (
+        np.asarray(t2_amplitudes)
+        .transpose(0, 2, 1, 3)
+        .reshape(nocc * nvrt, nocc * nvrt)
+    )
     outer_eigs, outer_vecs = _truncated_eigh(t2_mat, tol=tol)
     n_vecs = len(outer_eigs)
     one_body_tensors = np.zeros((n_vecs, 2, norb, norb), dtype=complex)
@@ -156,7 +181,9 @@ def double_factorized_t2(
         one_body_tensor[1] = _quadrature(mat, sign=-1)
     eigs, orbital_rotations = np.linalg.eigh(one_body_tensors)
     coeffs = np.array([1, -1]) * outer_eigs[:, None]
-    diag_coulomb_mats = coeffs[:, :, None, None] * eigs[:, :, :, None] * eigs[:, :, None, :]
+    diag_coulomb_mats = (
+        coeffs[:, :, None, None] * eigs[:, :, :, None] * eigs[:, :, None, :]
+    )
     orbital_rotations = orbital_rotations.reshape(-1, norb, norb)[:max_terms]
     diag_coulomb_mats = diag_coulomb_mats.reshape(-1, norb, norb)[:max_terms]
     if diag_coulomb_indices is not None:
@@ -166,7 +193,9 @@ def double_factorized_t2(
             mask[rows, cols] = True
             mask[cols, rows] = True
         diag_coulomb_mats = diag_coulomb_mats * mask
-    return np.asarray(diag_coulomb_mats, dtype=float), np.asarray(orbital_rotations, dtype=complex)
+    return np.asarray(diag_coulomb_mats, dtype=float), np.asarray(
+        orbital_rotations, dtype=complex
+    )
 
 
 def reconstruct_t2(
@@ -209,18 +238,32 @@ class UCJOpSpinBalanced:
                 "orbital_rotations should have shape (n_reps, norb, norb). "
                 f"Got shape {self.orbital_rotations.shape}."
             )
-        if self.final_orbital_rotation is not None and self.final_orbital_rotation.ndim != 2:
+        if (
+            self.final_orbital_rotation is not None
+            and self.final_orbital_rotation.ndim != 2
+        ):
             raise ValueError(
                 "final_orbital_rotation should have shape (norb, norb). "
                 f"Got shape {self.final_orbital_rotation.shape}."
             )
         if self.diag_coulomb_mats.shape[0] != self.orbital_rotations.shape[0]:
-            raise ValueError("diag_coulomb_mats and orbital_rotations should have the same first dimension.")
-        if not all(is_real_symmetric(mats[0], rtol=rtol, atol=atol) and is_real_symmetric(mats[1], rtol=rtol, atol=atol) for mats in self.diag_coulomb_mats):
+            raise ValueError(
+                "diag_coulomb_mats and orbital_rotations should have the same first dimension."
+            )
+        if not all(
+            is_real_symmetric(mats[0], rtol=rtol, atol=atol)
+            and is_real_symmetric(mats[1], rtol=rtol, atol=atol)
+            for mats in self.diag_coulomb_mats
+        ):
             raise ValueError("Diagonal Coulomb matrices were not all real symmetric.")
-        if not all(is_unitary(orbital_rotation, rtol=rtol, atol=atol) for orbital_rotation in self.orbital_rotations):
+        if not all(
+            is_unitary(orbital_rotation, rtol=rtol, atol=atol)
+            for orbital_rotation in self.orbital_rotations
+        ):
             raise ValueError("Orbital rotations were not all unitary.")
-        if self.final_orbital_rotation is not None and not is_unitary(self.final_orbital_rotation, rtol=rtol, atol=atol):
+        if self.final_orbital_rotation is not None and not is_unitary(
+            self.final_orbital_rotation, rtol=rtol, atol=atol
+        ):
             raise ValueError("Final orbital rotation was not unitary.")
 
     @property
@@ -236,7 +279,10 @@ class UCJOpSpinBalanced:
         norb: int,
         n_reps: int,
         *,
-        interaction_pairs: tuple[list[tuple[int, int]] | None, list[tuple[int, int]] | None] | None = None,
+        interaction_pairs: tuple[
+            list[tuple[int, int]] | None, list[tuple[int, int]] | None
+        ]
+        | None = None,
         with_final_orbital_rotation: bool = False,
     ) -> int:
         if interaction_pairs is None:
@@ -247,7 +293,10 @@ class UCJOpSpinBalanced:
         n_triu_indices = norb * (norb + 1) // 2
         n_params_aa = n_triu_indices if pairs_aa is None else len(pairs_aa)
         n_params_ab = n_triu_indices if pairs_ab is None else len(pairs_ab)
-        return n_reps * (n_params_aa + n_params_ab + norb**2) + with_final_orbital_rotation * norb**2
+        return (
+            n_reps * (n_params_aa + n_params_ab + norb**2)
+            + with_final_orbital_rotation * norb**2
+        )
 
     @staticmethod
     def from_parameters(
@@ -255,7 +304,10 @@ class UCJOpSpinBalanced:
         *,
         norb: int,
         n_reps: int,
-        interaction_pairs: tuple[list[tuple[int, int]] | None, list[tuple[int, int]] | None] | None = None,
+        interaction_pairs: tuple[
+            list[tuple[int, int]] | None, list[tuple[int, int]] | None
+        ]
+        | None = None,
         with_final_orbital_rotation: bool = False,
     ) -> "UCJOpSpinBalanced":
         n_params = UCJOpSpinBalanced.n_params(
@@ -273,7 +325,10 @@ class UCJOpSpinBalanced:
         if interaction_pairs is None:
             interaction_pairs = (None, None)
         pairs_aa, pairs_ab = interaction_pairs
-        triu_indices = cast(list[tuple[int, int]], list(itertools.combinations_with_replacement(range(norb), 2)))
+        triu_indices = cast(
+            list[tuple[int, int]],
+            list(itertools.combinations_with_replacement(range(norb), 2)),
+        )
         if pairs_aa is None:
             pairs_aa = triu_indices
         if pairs_ab is None:
@@ -281,10 +336,16 @@ class UCJOpSpinBalanced:
         diag_coulomb_mats = np.zeros((n_reps, 2, norb, norb))
         orbital_rotations = np.zeros((n_reps, norb, norb), dtype=complex)
         index = 0
-        for orbital_rotation, diag_coulomb_mat in zip(orbital_rotations, diag_coulomb_mats):
-            orbital_rotation[:] = unitary_from_parameters(params[index : index + norb**2], norb)
+        for orbital_rotation, diag_coulomb_mat in zip(
+            orbital_rotations, diag_coulomb_mats
+        ):
+            orbital_rotation[:] = unitary_from_parameters(
+                params[index : index + norb**2], norb
+            )
             index += norb**2
-            for indices, this_diag_coulomb_mat in zip((pairs_aa, pairs_ab), diag_coulomb_mat):
+            for indices, this_diag_coulomb_mat in zip(
+                (pairs_aa, pairs_ab), diag_coulomb_mat
+            ):
                 if indices:
                     n_block = len(indices)
                     rows, cols = zip(*indices)
@@ -295,12 +356,19 @@ class UCJOpSpinBalanced:
         final_orbital_rotation = None
         if with_final_orbital_rotation:
             final_orbital_rotation = unitary_from_parameters(params[index:], norb)
-        return UCJOpSpinBalanced(diag_coulomb_mats=diag_coulomb_mats, orbital_rotations=orbital_rotations, final_orbital_rotation=final_orbital_rotation)
+        return UCJOpSpinBalanced(
+            diag_coulomb_mats=diag_coulomb_mats,
+            orbital_rotations=orbital_rotations,
+            final_orbital_rotation=final_orbital_rotation,
+        )
 
     def to_parameters(
         self,
         *,
-        interaction_pairs: tuple[list[tuple[int, int]] | None, list[tuple[int, int]] | None] | None = None,
+        interaction_pairs: tuple[
+            list[tuple[int, int]] | None, list[tuple[int, int]] | None
+        ]
+        | None = None,
     ) -> np.ndarray:
         n_reps, _, norb, _ = self.diag_coulomb_mats.shape
         n_params = UCJOpSpinBalanced.n_params(
@@ -312,20 +380,29 @@ class UCJOpSpinBalanced:
         if interaction_pairs is None:
             interaction_pairs = (None, None)
         pairs_aa, pairs_ab = interaction_pairs
-        triu_indices = cast(list[tuple[int, int]], list(itertools.combinations_with_replacement(range(norb), 2)))
+        triu_indices = cast(
+            list[tuple[int, int]],
+            list(itertools.combinations_with_replacement(range(norb), 2)),
+        )
         if pairs_aa is None:
             pairs_aa = triu_indices
         if pairs_ab is None:
             pairs_ab = triu_indices
         params = np.zeros(n_params, dtype=float)
         index = 0
-        for orbital_rotation, diag_coulomb_mat in zip(self.orbital_rotations, self.diag_coulomb_mats):
+        for orbital_rotation, diag_coulomb_mat in zip(
+            self.orbital_rotations, self.diag_coulomb_mats
+        ):
             params[index : index + norb**2] = unitary_to_parameters(orbital_rotation)
             index += norb**2
-            for indices, this_diag_coulomb_mat in zip((pairs_aa, pairs_ab), diag_coulomb_mat):
+            for indices, this_diag_coulomb_mat in zip(
+                (pairs_aa, pairs_ab), diag_coulomb_mat
+            ):
                 if indices:
                     n_block = len(indices)
-                    params[index : index + n_block] = this_diag_coulomb_mat[tuple(zip(*indices))]
+                    params[index : index + n_block] = this_diag_coulomb_mat[
+                        tuple(zip(*indices))
+                    ]
                     index += n_block
         if self.final_orbital_rotation is not None:
             params[index:] = unitary_to_parameters(self.final_orbital_rotation)
@@ -337,7 +414,10 @@ class UCJOpSpinBalanced:
         *,
         t1: np.ndarray | None = None,
         n_reps: int | None = None,
-        interaction_pairs: tuple[list[tuple[int, int]] | None, list[tuple[int, int]] | None] | None = None,
+        interaction_pairs: tuple[
+            list[tuple[int, int]] | None, list[tuple[int, int]] | None
+        ]
+        | None = None,
         tol: float = 1e-8,
         optimize: bool = False,
         method: str = "L-BFGS-B",
@@ -377,9 +457,13 @@ class UCJOpSpinBalanced:
         diag_coulomb_mats = np.stack([diag_coulomb_mats, diag_coulomb_mats], axis=1)
         n_vecs = diag_coulomb_mats.shape[0]
         if n_reps is not None and n_vecs < n_reps:
-            diag_coulomb_mats = np.concatenate([diag_coulomb_mats, np.zeros((n_reps - n_vecs, 2, norb, norb))])
+            diag_coulomb_mats = np.concatenate(
+                [diag_coulomb_mats, np.zeros((n_reps - n_vecs, 2, norb, norb))]
+            )
             eye = np.eye(norb)
-            orbital_rotations = np.concatenate([orbital_rotations, np.stack([eye for _ in range(n_reps - n_vecs)])])
+            orbital_rotations = np.concatenate(
+                [orbital_rotations, np.stack([eye for _ in range(n_reps - n_vecs)])]
+            )
         final_orbital_rotation = None
         if t1 is not None:
             final_orbital_rotation = orbital_rotation_from_t1_amplitudes(np.asarray(t1))
@@ -397,7 +481,11 @@ class UCJOpSpinBalanced:
                 mask[rows, cols] = True
                 mask[cols, rows] = True
             diag_coulomb_mats[:, 1] *= mask
-        return UCJOpSpinBalanced(diag_coulomb_mats=diag_coulomb_mats, orbital_rotations=orbital_rotations, final_orbital_rotation=final_orbital_rotation)
+        return UCJOpSpinBalanced(
+            diag_coulomb_mats=diag_coulomb_mats,
+            orbital_rotations=orbital_rotations,
+            final_orbital_rotation=final_orbital_rotation,
+        )
 
     @staticmethod
     def from_cisd_vec(
@@ -407,7 +495,10 @@ class UCJOpSpinBalanced:
         nocc: int,
         c0_threshold: float = 1e-12,
         n_reps: int | None = None,
-        interaction_pairs: tuple[list[tuple[int, int]] | None, list[tuple[int, int]] | None] | None = None,
+        interaction_pairs: tuple[
+            list[tuple[int, int]] | None, list[tuple[int, int]] | None
+        ]
+        | None = None,
         tol: float = 1e-8,
         optimize: bool = False,
         method: str = "L-BFGS-B",
@@ -417,9 +508,13 @@ class UCJOpSpinBalanced:
         multi_stage_start: int | None = None,
         multi_stage_step: int | None = None,
     ) -> "UCJOpSpinBalanced":
-        c0, c1, c2 = pyscf.ci.cisd.cisdvec_to_amplitudes(cisd_vec, norb, nocc, copy=False)
+        c0, c1, c2 = pyscf.ci.cisd.cisdvec_to_amplitudes(
+            cisd_vec, norb, nocc, copy=False
+        )
         if math.isclose(c0, 0.0, abs_tol=c0_threshold):
-            raise ValueError(f"CISD reference coefficient c0={c0} is smaller than the specified threshold, c0_tol={c0_threshold}.")
+            raise ValueError(
+                f"CISD reference coefficient c0={c0} is smaller than the specified threshold, c0_tol={c0_threshold}."
+            )
         t1 = c1 / c0
         t2 = c2 / c0 - 0.5 * np.einsum("ia,jb->ijab", t1, t1)
         return UCJOpSpinBalanced.from_t_amplitudes(
@@ -437,10 +532,14 @@ class UCJOpSpinBalanced:
             multi_stage_step=multi_stage_step,
         )
 
-    def apply(self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True) -> np.ndarray:
+    def apply(
+        self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True
+    ) -> np.ndarray:
         out = np.array(vec, dtype=np.complex128, copy=copy)
         current_basis = np.eye(self.norb, dtype=np.complex128)
-        for (same_spin, mixed_spin), orbital_rotation in zip(self.diag_coulomb_mats, self.orbital_rotations):
+        for (same_spin, mixed_spin), orbital_rotation in zip(
+            self.diag_coulomb_mats, self.orbital_rotations
+        ):
             out = apply_orbital_rotation(
                 out,
                 orbital_rotation.T.conj() @ current_basis,
@@ -460,7 +559,9 @@ class UCJOpSpinBalanced:
             )
             current_basis = orbital_rotation
         if self.final_orbital_rotation is None:
-            out = apply_orbital_rotation(out, current_basis, norb=self.norb, nelec=nelec, copy=False)
+            out = apply_orbital_rotation(
+                out, current_basis, norb=self.norb, nelec=nelec, copy=False
+            )
         else:
             out = apply_orbital_rotation(
                 out,
@@ -471,7 +572,9 @@ class UCJOpSpinBalanced:
             )
         return out
 
-    def _apply_unitary_(self, vec: np.ndarray, norb: int, nelec: int | tuple[int, int], copy: bool) -> np.ndarray:
+    def _apply_unitary_(
+        self, vec: np.ndarray, norb: int, nelec: int | tuple[int, int], copy: bool
+    ) -> np.ndarray:
         if isinstance(nelec, int):
             return NotImplemented
         return self.apply(vec, nelec=nelec, copy=copy)
@@ -479,12 +582,23 @@ class UCJOpSpinBalanced:
     def _approx_eq_(self, other, rtol: float, atol: float) -> bool:
         if not isinstance(other, UCJOpSpinBalanced):
             return NotImplemented
-        if not np.allclose(self.diag_coulomb_mats, other.diag_coulomb_mats, rtol=rtol, atol=atol):
+        if not np.allclose(
+            self.diag_coulomb_mats, other.diag_coulomb_mats, rtol=rtol, atol=atol
+        ):
             return False
-        if not np.allclose(self.orbital_rotations, other.orbital_rotations, rtol=rtol, atol=atol):
+        if not np.allclose(
+            self.orbital_rotations, other.orbital_rotations, rtol=rtol, atol=atol
+        ):
             return False
-        if (self.final_orbital_rotation is None) != (other.final_orbital_rotation is None):
+        if (self.final_orbital_rotation is None) != (
+            other.final_orbital_rotation is None
+        ):
             return False
         if self.final_orbital_rotation is not None:
-            return np.allclose(cast(np.ndarray, self.final_orbital_rotation), cast(np.ndarray, other.final_orbital_rotation), rtol=rtol, atol=atol)
+            return np.allclose(
+                cast(np.ndarray, self.final_orbital_rotation),
+                cast(np.ndarray, other.final_orbital_rotation),
+                rtol=rtol,
+                atol=atol,
+            )
         return True

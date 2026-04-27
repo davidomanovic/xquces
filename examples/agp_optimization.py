@@ -88,7 +88,9 @@ def run_casscf_singlet(scf, norb: int, nelec: tuple[int, int]):
     return mc
 
 
-def exact_singlet_root(hamiltonian, norb: int, nelec: tuple[int, int]) -> tuple[float, float, np.ndarray]:
+def exact_singlet_root(
+    hamiltonian, norb: int, nelec: tuple[int, int]
+) -> tuple[float, float, np.ndarray]:
     dim = hamiltonian.shape[0]
     if dim <= dense_threshold:
         dense = build_dense_hamiltonian(hamiltonian, n_workers=dense_h_workers)
@@ -128,7 +130,9 @@ def align_active_orbitals_to_previous(casscf, previous, mol) -> np.ndarray:
     )
     current_for_old = np.empty_like(old_for_new)
     current_for_old[old_for_new] = np.arange(old_for_new.size)
-    aligned_active_mo = active_mo[:, current_for_old] * np.conj(phases[current_for_old])[np.newaxis, :]
+    aligned_active_mo = (
+        active_mo[:, current_for_old] * np.conj(phases[current_for_old])[np.newaxis, :]
+    )
     mo_coeff = np.array(casscf.mo_coeff, copy=True)
     start_idx = casscf.ncore
     stop_idx = start_idx + casscf.ncas
@@ -157,7 +161,9 @@ def build_agp_initialized_seed(
         amps[col] = 1.0
         det = xquces.doci_state(reference_parameterization.norb, nelec, amplitudes=amps)
         dressed_basis[:, col] = ansatz.apply(det, nelec=nelec, copy=True)
-    h_dressed = np.column_stack([hamiltonian @ dressed_basis[:, col] for col in range(dim_doci)])
+    h_dressed = np.column_stack(
+        [hamiltonian @ dressed_basis[:, col] for col in range(dim_doci)]
+    )
     h_doci = dressed_basis.conj().T @ h_dressed
     h_real = np.asarray(0.5 * (h_doci + h_doci.conj().T).real, dtype=np.float64)
     _, evecs = np.linalg.eigh(h_real)
@@ -179,7 +185,12 @@ def continuation_seed(parameterization, previous, mol, active_mo, fallback):
     )
     if ref_prev.shape != (parameterization.n_reference_params,):
         return np.asarray(fallback, dtype=np.float64)
-    return np.concatenate([np.asarray(ref_prev, dtype=np.float64), np.asarray(ansatz_params, dtype=np.float64)])
+    return np.concatenate(
+        [
+            np.asarray(ref_prev, dtype=np.float64),
+            np.asarray(ansatz_params, dtype=np.float64),
+        ]
+    )
 
 
 def state_energy(parameterization, x, hamiltonian) -> float:
@@ -201,13 +212,17 @@ def evaluate_state(parameterization, x, norb, nelec, hamiltonian, psi_fci, e_fci
     }
 
 
-def optimize_composite(parameterization, x0: np.ndarray, hamiltonian, trace: Path, r: float):
+def optimize_composite(
+    parameterization, x0: np.ndarray, hamiltonian, trace: Path, r: float
+):
     trace_header = ["R", "iter", "energy", "max_abs_grad"]
     params_to_vec = parameterization.params_to_vec()
     state_jacobian = xquces.make_composite_reference_ansatz_jacobian(parameterization)
 
     if optimizer == "metric_bfgs":
-        fun, jac, cache = make_state_objective(params_to_vec, state_jacobian, hamiltonian)
+        fun, jac, cache = make_state_objective(
+            params_to_vec, state_jacobian, hamiltonian
+        )
         counter = {"value": 0}
 
         def callback(_intermediate_result):
@@ -294,7 +309,17 @@ def main() -> None:
         output.unlink()
     if trace.exists():
         trace.unlink()
-    header = ["R", "E_FCI", "E_HF", "E_CCSD", "E_initial", "E_opt", "S2", "overlap2", "n_params"]
+    header = [
+        "R",
+        "E_FCI",
+        "E_HF",
+        "E_CCSD",
+        "E_initial",
+        "E_opt",
+        "S2",
+        "overlap2",
+        "n_params",
+    ]
     print(",".join(header), flush=True)
     rs = np.linspace(start, stop, num=round((stop - start) / step) + 1)
     previous_dm = None
@@ -325,25 +350,39 @@ def main() -> None:
             try:
                 casscf = run_casscf_singlet(scf, norb, nelec)
             except Exception:
-                casscf = run_casscf(scf, ncas=norb, nelecas=nelec, active_space=active_space)
+                casscf = run_casscf(
+                    scf, ncas=norb, nelecas=nelec, active_space=active_space
+                )
             if previous_record is not None and use_orbital_alignment:
-                active_mo = align_active_orbitals_to_previous(casscf, previous_record, mol)
+                active_mo = align_active_orbitals_to_previous(
+                    casscf, previous_record, mol
+                )
             else:
                 active_mo = active_mo_coeff_from_casscf(casscf)
             ham = active_hamiltonian_from_casscf(casscf)
             h = ffsim.linear_operator(ham, norb=norb, nelec=nelec)
             e_fci, s2_fci, psi_fci = exact_singlet_root(h, norb, nelec)
-            ucj_seed = UCJRestrictedProjectedDFSeed(t2=ccsd.t2, t1=ccsd.t1, n_reps=1).build_ansatz()
-            ref_parameterization = xquces.AGPStateParameterization(norb=norb, nelec=nelec)
-            ansatz_parameterization = xquces.IGCR2SpinRestrictedParameterization(norb=norb, nocc=nocc)
+            ucj_seed = UCJRestrictedProjectedDFSeed(
+                t2=ccsd.t2, t1=ccsd.t1, n_reps=1
+            ).build_ansatz()
+            ref_parameterization = xquces.AGPStateParameterization(
+                norb=norb, nelec=nelec
+            )
+            ansatz_parameterization = xquces.IGCR2SpinRestrictedParameterization(
+                norb=norb, nocc=nocc
+            )
             parameterization = xquces.CompositeReferenceAnsatzParameterization(
                 reference_parameterization=ref_parameterization,
                 ansatz_parameterization=ansatz_parameterization,
                 nelec=nelec,
             )
-            x_seed = build_agp_initialized_seed(ref_parameterization, ansatz_parameterization, ucj_seed, nelec, h)
+            x_seed = build_agp_initialized_seed(
+                ref_parameterization, ansatz_parameterization, ucj_seed, nelec, h
+            )
             if previous_record is not None and use_continuation:
-                x0 = continuation_seed(parameterization, previous_record, mol, active_mo, x_seed)
+                x0 = continuation_seed(
+                    parameterization, previous_record, mol, active_mo, x_seed
+                )
                 seed_label = "transferred"
             else:
                 x0 = np.asarray(x_seed, dtype=np.float64)
@@ -357,9 +396,16 @@ def main() -> None:
             e_initial = state_energy(parameterization, x0, h)
             print(f"E(initial) = {e_initial:.12f}", flush=True)
             result = optimize_composite(parameterization, x0, h, trace, float(r))
-            diag = evaluate_state(parameterization, result.x, norb, nelec, h, psi_fci, e_fci)
+            diag = evaluate_state(
+                parameterization, result.x, norb, nelec, h, psi_fci, e_fci
+            )
             e_opt = diag["energy"]
-            previous_record = (np.asarray(result.x, dtype=np.float64).copy(), parameterization, mol, active_mo)
+            previous_record = (
+                np.asarray(result.x, dtype=np.float64).copy(),
+                parameterization,
+                mol,
+                active_mo,
+            )
             print(
                 f"[R={r:.3f}] Done: E={e_opt:.12f}, gap={diag['gap_mHa']:+.3f} mHa, <S^2>={diag['s2']:.3e}, overlap2={diag['overlap2']:.6f}, nit={getattr(result, 'nit', '')}, success={getattr(result, 'success', False)}",
                 flush=True,

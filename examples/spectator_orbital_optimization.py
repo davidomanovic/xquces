@@ -132,7 +132,9 @@ def align_active_orbitals_to_previous(casscf, previous, mol) -> np.ndarray:
     )
     current_for_old = np.empty_like(old_for_new)
     current_for_old[old_for_new] = np.arange(old_for_new.size)
-    aligned_active_mo = active_mo[:, current_for_old] * np.conj(phases[current_for_old])[np.newaxis, :]
+    aligned_active_mo = (
+        active_mo[:, current_for_old] * np.conj(phases[current_for_old])[np.newaxis, :]
+    )
 
     mo_coeff = np.array(casscf.mo_coeff, copy=True)
     start_idx = casscf.ncore
@@ -280,7 +282,7 @@ def optimize_with_bfgs(
             trace,
             {
                 "R": f"{r:.8f}",
-                "iter": str(counter['value']),
+                "iter": str(counter["value"]),
                 "energy": f"{energy:.14f}",
             },
             trace_header,
@@ -309,7 +311,9 @@ def optimize_ansatz(
     r: float,
 ):
     if optimizer == "linear_method":
-        return optimize_with_linear_method(param, x0, phi0, nelec, hamiltonian, trace, r)
+        return optimize_with_linear_method(
+            param, x0, phi0, nelec, hamiltonian, trace, r
+        )
     if optimizer == "bfgs":
         return optimize_with_bfgs(param, x0, phi0, nelec, hamiltonian, trace, r)
     raise ValueError(f"unknown optimizer: {optimizer}")
@@ -331,7 +335,17 @@ def main() -> None:
     if trace.exists():
         trace.unlink()
 
-    header = ["R", "E_FCI", "E_HF", "E_CCSD", "E_initial", "E_opt", "S2", "overlap2", "n_params"]
+    header = [
+        "R",
+        "E_FCI",
+        "E_HF",
+        "E_CCSD",
+        "E_initial",
+        "E_opt",
+        "S2",
+        "overlap2",
+        "n_params",
+    ]
     print(",".join(header), flush=True)
 
     rs = np.linspace(start, stop, num=round((stop - start) / step) + 1)
@@ -377,7 +391,9 @@ def main() -> None:
                 )
 
             if previous_record is not None and use_orbital_alignment:
-                active_mo = align_active_orbitals_to_previous(casscf, previous_record, mol)
+                active_mo = align_active_orbitals_to_previous(
+                    casscf, previous_record, mol
+                )
             else:
                 active_mo = active_mo_coeff_from_casscf(casscf)
 
@@ -407,7 +423,9 @@ def main() -> None:
                 seed_label = "UCJ/iGCR2"
 
             n_c1 = _count_attr(parameterization, "n_spectator_params")
-            n_c2 = _count_attr(parameterization, "n_two_spec_params", "n_two_spectator_params")
+            n_c2 = _count_attr(
+                parameterization, "n_two_spec_params", "n_two_spectator_params"
+            )
             print(
                 f"norb={norb} nelec={nelec} params={parameterization.n_params} (diag={parameterization.n_pair_params}, spectator={n_c1}, two_spec={n_c2}, right={parameterization.n_right_orbital_rotation_params})",
                 flush=True,

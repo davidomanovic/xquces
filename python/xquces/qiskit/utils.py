@@ -87,11 +87,7 @@ def total_gate_count(circuit: QuantumCircuit) -> int:
 
 def two_qubit_gate_count(circuit: QuantumCircuit) -> int:
     """Return the number of two-qubit operations in a circuit."""
-    return sum(
-        1
-        for instruction in circuit.data
-        if len(instruction.qubits) == 2
-    )
+    return sum(1 for instruction in circuit.data if len(instruction.qubits) == 2)
 
 
 def circuit_stats(circuit: QuantumCircuit, label: str) -> CircuitStats:

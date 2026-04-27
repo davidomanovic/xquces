@@ -41,7 +41,9 @@ class GCRAnsatz:
     def is_spin_balanced(self) -> bool:
         return isinstance(self.diagonal, SpinBalancedSpec)
 
-    def apply(self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True) -> np.ndarray:
+    def apply(
+        self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True
+    ) -> np.ndarray:
         d = self.diagonal
         if isinstance(d, SpinRestrictedSpec):
             return apply_gcr_spin_restricted(

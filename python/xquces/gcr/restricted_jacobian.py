@@ -45,6 +45,7 @@ def _antihermitian_basis_from_pairs(
         basis[2 * k + 1, q, p] = 1j
     return basis
 
+
 def _full_antihermitian_basis(norb: int) -> np.ndarray:
     pairs = list(itertools.combinations(range(norb), 2))
     basis = np.zeros((norb * norb, norb, norb), dtype=np.complex128)
@@ -57,6 +58,7 @@ def _full_antihermitian_basis(norb: int) -> np.ndarray:
     offdiag = _antihermitian_basis_from_pairs(norb, pairs)
     basis[idx:] = offdiag
     return basis
+
 
 def _left_chart_basis(chart: object, norb: int) -> np.ndarray:
     if isinstance(chart, GCR2FullUnitaryChart):

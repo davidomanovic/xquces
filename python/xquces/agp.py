@@ -44,7 +44,9 @@ def _real_unit_vector_from_parameters(dim: int, params: np.ndarray) -> np.ndarra
     return out
 
 
-def _real_unit_vector_jacobian_from_parameters(dim: int, params: np.ndarray) -> np.ndarray:
+def _real_unit_vector_jacobian_from_parameters(
+    dim: int, params: np.ndarray
+) -> np.ndarray:
     expected = dim - 1
     params = np.asarray(params, dtype=np.float64)
     if params.shape != (expected,):

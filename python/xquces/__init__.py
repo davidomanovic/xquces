@@ -11,6 +11,38 @@ from xquces.agp import (
     agp_state,
     agp_state_jacobian,
 )
+
+from xquces.gcr.igcr2 import (
+    IGCR2Ansatz,
+    IGCR2SpinBalancedParameterization,
+    IGCR2SpinBalancedSpec,
+    IGCR2SpinRestrictedParameterization,
+    IGCR2SpinRestrictedSpec,
+    exact_reference_ov_params_from_unitary,
+    exact_reference_ov_unitary,
+    orbital_relabeling_from_overlap,
+    reduce_spin_balanced,
+    reduce_spin_restricted,
+    relabel_igcr2_ansatz_orbitals,
+)
+from xquces.gates import (
+    apply_gcr_spin_balanced,
+    apply_gcr_spin_restricted,
+    apply_igcr2_spin_restricted,
+)
+
+from xquces.gcr.igcr3 import (
+    IGCR3Ansatz,
+    IGCR3CubicReduction,
+    IGCR3SpinRestrictedParameterization,
+    IGCR3SpinRestrictedSpec,
+    apply_igcr3_spin_restricted_diagonal,
+    igcr3_from_igcr2_ansatz,
+    relabel_igcr3_ansatz_orbitals,
+    spin_restricted_triples_seed_from_pair_params,
+)
+
+
 from xquces.pair_uccd import (
     PairUCCDStateParameterization,
     ProductPairUCCDStateParameterization,
@@ -44,6 +76,8 @@ from xquces.states import (
 from xquces.state_parameterization import (
     CompositeReferenceAnsatzParameterization,
     DOCIStateParameterization,
+    FixedReferenceAnsatzParameterization,
+    apply_ansatz_parameterization,
     make_composite_reference_ansatz_jacobian,
 )
 from xquces.hamiltonians import MolecularHamiltonianLinearOperator
@@ -58,6 +92,7 @@ from xquces.gcr import (
     GCR3ProductPairUCCDParameterization,
     GCR4PairUCCDParameterization,
     GCR4ProductPairUCCDParameterization,
+    GCRPairUCCDParameterization,
     GCRAnsatz,
     GCRSpinBalancedParameterization,
     GCRSpinRestrictedParameterization,
@@ -66,6 +101,7 @@ from xquces.gcr import (
     IGCR23SpinRestrictedParameterization,
     IGCR234Ansatz,
     IGCR234SpinRestrictedParameterization,
+    IGCRSpinRestrictedParameterization,
     gcr_from_ucj_ansatz,
 )
 from xquces.gcr.init import GaugeFixedGCRBalancedDFSeed
@@ -153,6 +189,8 @@ __all__ = [
     "PairUCCDStateParameterization",
     "ProductPairUCCDStateParameterization",
     "CompositeReferenceAnsatzParameterization",
+    "FixedReferenceAnsatzParameterization",
+    "apply_ansatz_parameterization",
     "make_composite_reference_ansatz_jacobian",
     "MolecularHamiltonianLinearOperator",
     "run_sqd_from_statevector",
@@ -167,6 +205,7 @@ __all__ = [
     "GCR3ProductPairUCCDParameterization",
     "GCR4PairUCCDParameterization",
     "GCR4ProductPairUCCDParameterization",
+    "GCRPairUCCDParameterization",
     "GCR2SpectatorOrbitalParameterization",
     "HigherOrderLiftSeed",
     "gcr_from_ucj_ansatz",
@@ -194,6 +233,7 @@ __all__ = [
     "IGCR4SpinRestrictedParameterization",
     "IGCR234Ansatz",
     "IGCR234SpinRestrictedParameterization",
+    "IGCRSpinRestrictedParameterization",
     "gradient_coordinate_subspace",
     "minimize_linear_method",
     "minimize_subspace_linear_method",

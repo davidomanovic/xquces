@@ -100,7 +100,9 @@ class GCR2NOCIReferenceAnsatz:
     def n_references(self) -> int:
         return len(self.references)
 
-    def apply(self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True) -> np.ndarray:
+    def apply(
+        self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True
+    ) -> np.ndarray:
         reference_vec = np.array(vec, dtype=np.complex128, copy=copy)
         accum = np.zeros_like(reference_vec)
         for coeff, right in zip(self.reference_coefficients, self.references):
@@ -203,7 +205,9 @@ class GCR2NOCIReferenceParameterization:
 
     @property
     def n_reference_orbital_rotation_params(self) -> int:
-        return self.n_references * self.n_reference_orbital_rotation_params_per_reference
+        return (
+            self.n_references * self.n_reference_orbital_rotation_params_per_reference
+        )
 
     @property
     def n_right_orbital_rotation_params(self) -> int:
@@ -256,7 +260,9 @@ class GCR2NOCIReferenceParameterization:
         coeff = params[idx : idx + n]
         idx += n
         n = self.n_reference_orbital_rotation_params_per_reference
-        references = np.asarray(params[idx:], dtype=np.float64).reshape(self.n_references, n)
+        references = np.asarray(params[idx:], dtype=np.float64).reshape(
+            self.n_references, n
+        )
         return left, diag, coeff, references
 
     def combine_parameters(
@@ -303,7 +309,9 @@ class GCR2NOCIReferenceParameterization:
         diag = params[idx : idx + n]
         idx += n
         n = self.n_reference_orbital_rotation_params_per_reference
-        references = np.asarray(params[idx:], dtype=np.float64).reshape(self.n_references, n)
+        references = np.asarray(params[idx:], dtype=np.float64).reshape(
+            self.n_references, n
+        )
         return left, diag, references
 
     def active_parameters_from_parameters(self, params: np.ndarray) -> np.ndarray:
@@ -317,7 +325,9 @@ class GCR2NOCIReferenceParameterization:
     ) -> np.ndarray:
         left, diag, references = self.split_active_parameters(active_parameters)
         if reference_coeff_params is None:
-            reference_coeff_params = np.zeros(self.n_reference_coeff_params, dtype=np.float64)
+            reference_coeff_params = np.zeros(
+                self.n_reference_coeff_params, dtype=np.float64
+            )
         return self.combine_parameters(left, diag, reference_coeff_params, references)
 
     def _base_params_from_split(
@@ -365,7 +375,11 @@ class GCR2NOCIReferenceParameterization:
             [diag_matrix[p, q] for p, q in self._interaction_pairs],
             dtype=np.float64,
         )
-        return np.asarray(left_dummy.left, dtype=np.complex128), diag_values, reference_params
+        return (
+            np.asarray(left_dummy.left, dtype=np.complex128),
+            diag_values,
+            reference_params,
+        )
 
     def basis_states_from_parameters(
         self,
@@ -374,8 +388,12 @@ class GCR2NOCIReferenceParameterization:
         nelec: tuple[int, int],
     ) -> np.ndarray:
         reference_vec = np.asarray(reference_vec, dtype=np.complex128)
-        left, diag_values, reference_params = self._shared_left_and_diag_from_parameters(params)
-        phases = _diag2_features(self.norb, nelec, self._interaction_pairs) @ diag_values
+        left, diag_values, reference_params = (
+            self._shared_left_and_diag_from_parameters(params)
+        )
+        phases = (
+            _diag2_features(self.norb, nelec, self._interaction_pairs) @ diag_values
+        )
         phase_vector = np.exp(1j * phases)
         out = np.empty((reference_vec.size, self.n_references), dtype=np.complex128)
         for k in range(self.n_references):
@@ -405,7 +423,9 @@ class GCR2NOCIReferenceParameterization:
         hamiltonian,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         basis = self.basis_states_from_parameters(params, reference_vec, nelec)
-        h_basis = np.column_stack([hamiltonian @ basis[:, k] for k in range(basis.shape[1])])
+        h_basis = np.column_stack(
+            [hamiltonian @ basis[:, k] for k in range(basis.shape[1])]
+        )
         s_matrix = basis.conj().T @ basis
         h_matrix = basis.conj().T @ h_basis
         s_matrix = 0.5 * (s_matrix + s_matrix.conj().T)
@@ -514,7 +534,9 @@ class GCR2NOCIReferenceParameterization:
         return self.combine_parameters(left, diag, coeff_params, references[order])
 
     def ansatz_from_parameters(self, params: np.ndarray) -> GCR2NOCIReferenceAnsatz:
-        left, diag_values, reference_params = self._shared_left_and_diag_from_parameters(params)
+        left, diag_values, reference_params = (
+            self._shared_left_and_diag_from_parameters(params)
+        )
         _, _, coeff_params, _ = self.split_parameters(params)
         coefficients = self.reference_coefficients_from_parameters(coeff_params)
         references = tuple(
@@ -541,7 +563,9 @@ class GCR2NOCIReferenceParameterization:
             if ansatz.nocc != self.nocc:
                 raise ValueError("ansatz nocc does not match parameterization")
             if len(ansatz.references) != self.n_references:
-                raise ValueError("ansatz reference count does not match parameterization")
+                raise ValueError(
+                    "ansatz reference count does not match parameterization"
+                )
             left_dummy = IGCR2Ansatz(
                 diagonal=IGCR2SpinRestrictedSpec(
                     pair=_symmetric_matrix_from_values(
@@ -615,7 +639,9 @@ class GCR2NOCIReferenceParameterization:
             previous_parameterization = self
         if orbital_overlap is not None:
             if old_for_new is not None or phases is not None:
-                raise ValueError("Pass either orbital_overlap or explicit relabeling, not both.")
+                raise ValueError(
+                    "Pass either orbital_overlap or explicit relabeling, not both."
+                )
             old_for_new, phases = orbital_relabeling_from_overlap(
                 orbital_overlap,
                 nocc=self.nocc,
@@ -627,8 +653,8 @@ class GCR2NOCIReferenceParameterization:
                 raise ValueError(
                     f"Expected {(previous_parameterization.n_params,)}, got {prev_params.shape}."
                 )
-            prev_left, prev_diag, prev_coeff, prev_refs = previous_parameterization.split_parameters(
-                prev_params
+            prev_left, prev_diag, prev_coeff, prev_refs = (
+                previous_parameterization.split_parameters(prev_params)
             )
             base_params = self._base.transfer_parameters_from(
                 previous_parameterization._base_params_from_split(
@@ -650,8 +676,10 @@ class GCR2NOCIReferenceParameterization:
             left = np.asarray(base_params[:n_left], dtype=np.float64)
             diag = np.asarray(base_params[n_left : n_left + n_diag], dtype=np.float64)
 
-            prev_coefficients = previous_parameterization.reference_coefficients_from_parameters(
-                prev_coeff
+            prev_coefficients = (
+                previous_parameterization.reference_coefficients_from_parameters(
+                    prev_coeff
+                )
             )
             coefficients = np.zeros(self.n_references, dtype=np.float64)
             n_copy = min(self.n_references, previous_parameterization.n_references)
@@ -679,7 +707,11 @@ class GCR2NOCIReferenceParameterization:
                 refs[k] = self._reference_params_from_unitary(unitary)
             return self.combine_parameters(left, diag, coeff, refs)
 
-        previous_base = self._base if previous_parameterization is None else previous_parameterization
+        previous_base = (
+            self._base
+            if previous_parameterization is None
+            else previous_parameterization
+        )
         base_params = self._base.transfer_parameters_from(
             previous_parameters,
             previous_parameterization=previous_base,

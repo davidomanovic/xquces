@@ -23,7 +23,9 @@ class GaugeFixedGCRBalancedDFSeed:
     multi_stage_start: int | None = None
     multi_stage_step: int | None = None
 
-    def build_parameters(self) -> tuple[GCRAnsatz, GCRSpinBalancedParameterization, np.ndarray]:
+    def build_parameters(
+        self,
+    ) -> tuple[GCRAnsatz, GCRSpinBalancedParameterization, np.ndarray]:
         ucj_ansatz = UCJBalancedDFSeed(
             t2=self.t2,
             t1=self.t1,

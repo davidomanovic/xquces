@@ -4,7 +4,13 @@ import itertools
 from collections.abc import Iterator, Sequence
 
 import numpy as np
-from qiskit.circuit import CircuitInstruction, Gate, QuantumCircuit, QuantumRegister, Qubit
+from qiskit.circuit import (
+    CircuitInstruction,
+    Gate,
+    QuantumCircuit,
+    QuantumRegister,
+    Qubit,
+)
 from qiskit.circuit.library import CPhaseGate, MCPhaseGate, PhaseGate
 
 from xquces.qiskit.gates.diag_2 import (

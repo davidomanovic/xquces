@@ -114,7 +114,9 @@ class UCJAnsatz:
     def is_spin_balanced(self) -> bool:
         return isinstance(self.layers[0].diagonal, SpinBalancedSpec)
 
-    def apply(self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True) -> np.ndarray:
+    def apply(
+        self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True
+    ) -> np.ndarray:
         out = np.array(vec, dtype=np.complex128, copy=copy)
         for layer in self.layers:
             d = layer.diagonal

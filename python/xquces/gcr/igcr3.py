@@ -184,9 +184,13 @@ class IGCR3CubicReduction:
         pair_values = np.asarray(pair_values, dtype=np.float64)
         cubic_values = np.asarray(cubic_values, dtype=np.float64)
         if pair_values.shape != (self.n_pair_full,):
-            raise ValueError(f"Expected pair shape {(self.n_pair_full,)}, got {pair_values.shape}.")
+            raise ValueError(
+                f"Expected pair shape {(self.n_pair_full,)}, got {pair_values.shape}."
+            )
         if cubic_values.shape != (self.n_cubic_full,):
-            raise ValueError(f"Expected cubic shape {(self.n_cubic_full,)}, got {cubic_values.shape}.")
+            raise ValueError(
+                f"Expected cubic shape {(self.n_cubic_full,)}, got {cubic_values.shape}."
+            )
 
         basis = self.physical_cubic_basis
         reduced = basis.T @ cubic_values
@@ -201,10 +205,7 @@ class IGCR3CubicReduction:
         if self.norb:
             nelec_total = 2 * int(self.nocc)
             onebody_phase[:] = (
-                0.5
-                * (nelec_total - 2)
-                * (nelec_total - 1)
-                * gauge_coeff[: self.norb]
+                0.5 * (nelec_total - 2) * (nelec_total - 1) * gauge_coeff[: self.norb]
             )
         return pair_reduced, reduced, onebody_phase
 
@@ -399,7 +400,9 @@ class IGCR3SpinRestrictedSpec:
         if tau is None:
             tau = np.zeros((norb, norb), dtype=np.float64)
         if omega_values is None:
-            omega_values = np.zeros(len(_default_triple_indices(norb)), dtype=np.float64)
+            omega_values = np.zeros(
+                len(_default_triple_indices(norb)), dtype=np.float64
+            )
         return cls(
             double_params=double,
             pair_values=pair_values,
@@ -495,7 +498,9 @@ class IGCR3Ansatz:
         omega_scale: float = 0.0,
     ) -> "IGCR3Ansatz":
         if not ansatz.is_spin_restricted:
-            raise TypeError("iGCR-3 is currently implemented only for spin-restricted seeds")
+            raise TypeError(
+                "iGCR-3 is currently implemented only for spin-restricted seeds"
+            )
         d = ansatz.diagonal.to_standard()
         tau, omega = spin_restricted_triples_seed_from_pair_params(
             d.pair_params,
@@ -593,8 +598,7 @@ def relabel_igcr3_ansatz_orbitals(
         dtype=np.float64,
     )
     omega_old = {
-        (p, q, r): value
-        for value, (p, q, r) in zip(d.omega_vector(), d.omega_indices)
+        (p, q, r): value for value, (p, q, r) in zip(d.omega_vector(), d.omega_indices)
     }
     omega_values = np.asarray(
         [
@@ -669,12 +673,9 @@ class IGCR3SpinRestrictedParameterization:
         _validate_pairs(self.interaction_pairs, self.norb, allow_diagonal=False)
         _validate_ordered_pairs(self.tau_indices_, self.norb)
         _validate_triples(self.omega_indices_, self.norb)
-        if (
-            self.left_right_ov_relative_scale is not None
-            and (
-                not np.isfinite(float(self.left_right_ov_relative_scale))
-                or self.left_right_ov_relative_scale <= 0
-            )
+        if self.left_right_ov_relative_scale is not None and (
+            not np.isfinite(float(self.left_right_ov_relative_scale))
+            or self.left_right_ov_relative_scale <= 0
         ):
             raise ValueError("left_right_ov_relative_scale must be positive or None")
 
@@ -791,9 +792,9 @@ class IGCR3SpinRestrictedParameterization:
             "pair": self.n_pair_params,
             "tau": 0 if self.uses_reduced_cubic_chart else self.n_tau_params,
             "omega": self.n_omega_params,
-            "cubic": self.n_tau_params if self.uses_reduced_cubic_chart else (
-                self.n_tau_params + self.n_omega_params
-            ),
+            "cubic": self.n_tau_params
+            if self.uses_reduced_cubic_chart
+            else (self.n_tau_params + self.n_omega_params),
             "right": self.n_right_orbital_rotation_params,
             "total": self.n_params,
         }
@@ -806,7 +807,9 @@ class IGCR3SpinRestrictedParameterization:
         idx = 0
 
         n = self.n_left_orbital_rotation_params
-        left = self._left_orbital_chart.unitary_from_parameters(params[idx : idx + n], self.norb)
+        left = self._left_orbital_chart.unitary_from_parameters(
+            params[idx : idx + n], self.norb
+        )
         idx += n
 
         n = self.n_pair_params
@@ -835,7 +838,9 @@ class IGCR3SpinRestrictedParameterization:
             idx += n
         else:
             n = self.n_tau_params
-            tau = _ordered_matrix_from_values(params[idx : idx + n], self.norb, self.tau_indices)
+            tau = _ordered_matrix_from_values(
+                params[idx : idx + n], self.norb, self.tau_indices
+            )
             idx += n
 
             n = self.n_omega_params
@@ -854,7 +859,9 @@ class IGCR3SpinRestrictedParameterization:
             idx += n
 
         n = self.n_right_orbital_rotation_params
-        final = self.right_orbital_chart.unitary_from_parameters(params[idx : idx + n], self.norb)
+        final = self.right_orbital_chart.unitary_from_parameters(
+            params[idx : idx + n], self.norb
+        )
         right = _right_unitary_from_left_and_final(left, final, self.nocc)
 
         return IGCR3Ansatz(
@@ -899,15 +906,21 @@ class IGCR3SpinRestrictedParameterization:
             _restricted_left_phase_vector(d.full_double(), self.nocc)
             + cubic_onebody_phase
         )
-        left_eff = np.asarray(ansatz.left, dtype=np.complex128) @ _diag_unitary(phase_vec)
+        left_eff = np.asarray(ansatz.left, dtype=np.complex128) @ _diag_unitary(
+            phase_vec
+        )
         left_chart = self._left_orbital_chart
         if hasattr(left_chart, "parameters_and_right_phase_from_unitary"):
-            left_params, right_phase = left_chart.parameters_and_right_phase_from_unitary(left_eff)
+            left_params, right_phase = (
+                left_chart.parameters_and_right_phase_from_unitary(left_eff)
+            )
         else:
             left_params = left_chart.parameters_from_unitary(left_eff)
             right_phase = np.zeros(self.norb, dtype=np.float64)
 
-        right_eff = _diag_unitary(right_phase) @ np.asarray(ansatz.right, dtype=np.complex128)
+        right_eff = _diag_unitary(right_phase) @ np.asarray(
+            ansatz.right, dtype=np.complex128
+        )
 
         out = np.zeros(self.n_params, dtype=np.float64)
         idx = 0
@@ -916,13 +929,15 @@ class IGCR3SpinRestrictedParameterization:
         idx += n
 
         n = self.n_pair_params
-        out[idx : idx + n] = np.asarray([pair_eff[p, q] for p, q in self.pair_indices], dtype=np.float64)
+        out[idx : idx + n] = np.asarray(
+            [pair_eff[p, q] for p, q in self.pair_indices], dtype=np.float64
+        )
         idx += n
 
         if self.uses_reduced_cubic_chart:
             out[
-                self.n_left_orbital_rotation_params :
-                self.n_left_orbital_rotation_params + self.n_pair_params
+                self.n_left_orbital_rotation_params : self.n_left_orbital_rotation_params
+                + self.n_pair_params
             ] = reduced_pair_values
             n = self.n_tau_params
             out[idx : idx + n] = reduced_cubic_values
@@ -936,11 +951,15 @@ class IGCR3SpinRestrictedParameterization:
             full_omega = {
                 triple: value for value, triple in zip(omega, d.omega_indices)
             }
-            out[idx : idx + n] = np.asarray([full_omega[t] for t in self.omega_indices], dtype=np.float64)
+            out[idx : idx + n] = np.asarray(
+                [full_omega[t] for t in self.omega_indices], dtype=np.float64
+            )
             idx += n
 
         n = self.n_right_orbital_rotation_params
-        left_param_unitary = self._left_orbital_chart.unitary_from_parameters(left_params, self.norb)
+        left_param_unitary = self._left_orbital_chart.unitary_from_parameters(
+            left_params, self.norb
+        )
         final_eff = _final_unitary_from_left_and_right(
             left_param_unitary,
             right_eff,
@@ -1010,10 +1029,14 @@ class IGCR3SpinRestrictedParameterization:
             previous_parameterization = self
         ansatz = previous_parameterization.ansatz_from_parameters(previous_parameters)
         if ansatz.nocc != self.nocc:
-            raise ValueError("previous ansatz nocc does not match this parameterization")
+            raise ValueError(
+                "previous ansatz nocc does not match this parameterization"
+            )
         if orbital_overlap is not None:
             if old_for_new is not None or phases is not None:
-                raise ValueError("Pass either orbital_overlap or explicit relabeling, not both.")
+                raise ValueError(
+                    "Pass either orbital_overlap or explicit relabeling, not both."
+                )
             del block_diagonal
             basis_change = orbital_transport_unitary_from_overlap(orbital_overlap)
             if isinstance(ansatz, IGCR3Ansatz):
@@ -1021,25 +1044,61 @@ class IGCR3SpinRestrictedParameterization:
             elif isinstance(ansatz, IGCR2Ansatz):
                 ansatz = transport_igcr2_ansatz_orbitals(ansatz, basis_change)
             else:
-                raise TypeError(f"Unsupported ansatz type for transfer: {type(ansatz)!r}")
+                raise TypeError(
+                    f"Unsupported ansatz type for transfer: {type(ansatz)!r}"
+                )
         elif old_for_new is not None:
             if isinstance(ansatz, IGCR3Ansatz):
                 ansatz = relabel_igcr3_ansatz_orbitals(ansatz, old_for_new, phases)
             elif isinstance(ansatz, IGCR2Ansatz):
                 ansatz = relabel_igcr2_ansatz_orbitals(ansatz, old_for_new, phases)
             else:
-                raise TypeError(f"Unsupported ansatz type for transfer: {type(ansatz)!r}")
+                raise TypeError(
+                    f"Unsupported ansatz type for transfer: {type(ansatz)!r}"
+                )
         if isinstance(ansatz, IGCR3Ansatz):
             return self.parameters_from_ansatz(ansatz)
         if isinstance(ansatz, IGCR2Ansatz):
             return self.parameters_from_igcr2_ansatz(ansatz)
         raise TypeError(f"Unsupported ansatz type for transfer: {type(ansatz)!r}")
 
-    def params_to_vec(self, reference_vec: np.ndarray, nelec: tuple[int, int]) -> Callable[[np.ndarray], np.ndarray]:
+    def apply(
+        self,
+        reference: object,
+        nelec: tuple[int, int] | None = None,
+    ):
+        from dataclasses import replace
+
+        from xquces.gcr.bridge_gcr2 import GCR2FullUnitaryChart
+        from xquces.state_parameterization import (
+            apply_ansatz_parameterization,
+            reference_is_hartree_fock_state,
+        )
+
+        if nelec is None:
+            nelec = (self.nocc, self.nocc)
+        nelec = tuple(int(x) for x in nelec)
+        parameterization = self
+        use_full_right = (
+            self.right_orbital_chart_override is None
+            and not reference_is_hartree_fock_state(reference, self.norb, nelec)
+        )
+        if use_full_right:
+            parameterization = replace(
+                self,
+                right_orbital_chart_override=GCR2FullUnitaryChart(),
+            )
+        return apply_ansatz_parameterization(parameterization, reference, nelec)
+
+    def params_to_vec(
+        self, reference_vec: np.ndarray, nelec: tuple[int, int]
+    ) -> Callable[[np.ndarray], np.ndarray]:
         reference_vec = np.asarray(reference_vec, dtype=np.complex128)
 
         def func(params: np.ndarray) -> np.ndarray:
-            return self.ansatz_from_parameters(params).apply(reference_vec, nelec=nelec, copy=True)
+            return self.ansatz_from_parameters(params).apply(
+                reference_vec, nelec=nelec, copy=True
+            )
 
         return func
 

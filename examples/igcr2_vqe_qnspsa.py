@@ -35,7 +35,7 @@ DEFAULT_MAXITER = 300
 # The calibrate_c perturbation must be small enough not to escape the basin.
 DEFAULT_CALIBRATE = True
 DEFAULT_CALIBRATE_C = 0.01
-DEFAULT_TARGET_MAGNITUDE = 0.1   # desired SPSA step norm (before QN preconditioning)
+DEFAULT_TARGET_MAGNITUDE = 0.1  # desired SPSA step norm (before QN preconditioning)
 DEFAULT_STABILITY_CONSTANT = 0.0
 DEFAULT_ALPHA = 0.2
 DEFAULT_GAMMA = 0.101
@@ -151,7 +151,9 @@ def _load_qnspsa():
                 )
             eta, eps = get_eta(), get_eps()
 
-            lse_solver = self.lse_solver if self.lse_solver is not None else np.linalg.solve
+            lse_solver = (
+                self.lse_solver if self.lse_solver is not None else np.linalg.solve
+            )
             x = np.asarray(x0, dtype=float)
             if self.initial_hessian is None:
                 self._smoothed_hessian = np.identity(x.size)
@@ -195,7 +197,9 @@ def _load_qnspsa():
                         )
                     )
 
-                best_fx, best_step, best_x, _, _ = min(candidates, key=lambda item: item[0])
+                best_fx, best_step, best_x, _, _ = min(
+                    candidates, key=lambda item: item[0]
+                )
                 accepted = True
                 if self.blocking and fx is not None:
                     accepted = bool(best_fx < fx + self.allowed_increase)
@@ -204,12 +208,15 @@ def _load_qnspsa():
                     self.callback(self._nfev, best_x, best_fx, best_step, accepted)
 
                 if not accepted:
-                    if self.termination_checker is not None and self.termination_checker(
-                        self._nfev,
-                        best_x,
-                        best_fx,
-                        best_step,
-                        False,
+                    if (
+                        self.termination_checker is not None
+                        and self.termination_checker(
+                            self._nfev,
+                            best_x,
+                            best_fx,
+                            best_step,
+                            False,
+                        )
                     ):
                         break
                     continue
@@ -260,7 +267,9 @@ def bitstring_index(occ_alpha, occ_beta, norb: int) -> int:
     return alpha_bits + beta_bits
 
 
-def jw_state_to_sector(vec: np.ndarray, norb: int, nelec: tuple[int, int]) -> np.ndarray:
+def jw_state_to_sector(
+    vec: np.ndarray, norb: int, nelec: tuple[int, int]
+) -> np.ndarray:
     occ_alpha = occ_rows(norb, nelec[0])
     occ_beta = occ_rows(norb, nelec[1])
     out = np.zeros((len(occ_alpha), len(occ_beta)), dtype=np.complex128)
@@ -385,7 +394,9 @@ def state_factory(
             circuit = igcr2_stateprep_jw_circuit(ansatz)
             full_state = zero.evolve(circuit).data
             cache.full[key] = full_state
-            cache.sector[key] = jw_state_to_sector(full_state, system.norb, system.nelec)
+            cache.sector[key] = jw_state_to_sector(
+                full_state, system.norb, system.nelec
+            )
         return cache.full[key], cache.sector[key]
 
     return state_from_params
@@ -510,7 +521,7 @@ def run_qnspsa_vqe(args) -> None:
         last_lr = next(x for i, x in enumerate(calibrated_lr()) if i == niter - 1)
         print(
             f"# calibrated stage={stage}: lr[0]={first_lr:.4e}, lr[{niter}]={last_lr:.4e} "
-            f"(decay={first_lr/last_lr:.1f}×), "
+            f"(decay={first_lr / last_lr:.1f}×), "
             f"stability_constant={args.stability_constant}, "
             f"alpha={args.alpha}, gamma={args.gamma}",
             flush=True,
@@ -581,20 +592,29 @@ def parse_args():
     # Calibration (default: on).  Uses QNSPSA.calibrate() to estimate the gradient
     # scale at the seed point and derive learning-rate / perturbation schedules.
     parser.add_argument(
-        "--no-calibrate", dest="calibrate", action="store_false",
+        "--no-calibrate",
+        dest="calibrate",
+        action="store_false",
         help="Skip calibration and use explicit --learning-rate / --perturbation.",
     )
     parser.set_defaults(calibrate=DEFAULT_CALIBRATE)
     parser.add_argument(
-        "--calibrate-c", type=float, default=DEFAULT_CALIBRATE_C,
+        "--calibrate-c",
+        type=float,
+        default=DEFAULT_CALIBRATE_C,
         help="Perturbation size used during calibration (default: %(default)s).",
     )
     parser.add_argument(
-        "--target-magnitude", type=float, default=DEFAULT_TARGET_MAGNITUDE,
+        "--target-magnitude",
+        type=float,
+        default=DEFAULT_TARGET_MAGNITUDE,
         help="Desired Euclidean norm of the first SPSA gradient step (default: %(default)s).",
     )
     parser.add_argument(
-        "--stability-constant", type=float, default=DEFAULT_STABILITY_CONSTANT, dest="stability_constant",
+        "--stability-constant",
+        type=float,
+        default=DEFAULT_STABILITY_CONSTANT,
+        dest="stability_constant",
         help=(
             "A in lr_k = a/(A+k+1)^alpha.  "
             "In Qiskit's calibration this also shrinks lr[0], so the default is 0. "
@@ -621,14 +641,18 @@ def parse_args():
     parser.add_argument("--learning-rate", type=float, default=DEFAULT_LEARNING_RATE)
     parser.add_argument("--perturbation", type=float, default=DEFAULT_PERTURBATION)
     parser.add_argument(
-        "--regularization", type=float, default=DEFAULT_REGULARIZATION,
+        "--regularization",
+        type=float,
+        default=DEFAULT_REGULARIZATION,
         help=(
             "Metric-tensor regularisation λ: step = (H + λI)^{-1} g.  "
             "Should be >> smallest metric eigenvalue to suppress degenerate directions "
             "(default: %(default)s)."
         ),
     )
-    parser.add_argument("--allowed-increase", type=float, default=DEFAULT_ALLOWED_INCREASE)
+    parser.add_argument(
+        "--allowed-increase", type=float, default=DEFAULT_ALLOWED_INCREASE
+    )
     parser.add_argument(
         "--line-search-factors",
         type=str,
@@ -651,7 +675,9 @@ def parse_args():
         ),
     )
     parser.add_argument(
-        "--resamplings", type=int, default=DEFAULT_RESAMPLINGS,
+        "--resamplings",
+        type=int,
+        default=DEFAULT_RESAMPLINGS,
         help="Number of gradient resamplings per step for noise reduction (default: %(default)s).",
     )
     parser.add_argument(
@@ -665,7 +691,9 @@ def parse_args():
         ),
     )
     parser.add_argument(
-        "--max-gradient-norm", type=float, default=DEFAULT_MAX_GRADIENT_NORM,
+        "--max-gradient-norm",
+        type=float,
+        default=DEFAULT_MAX_GRADIENT_NORM,
         dest="max_gradient_norm",
         help=(
             "Hard cap on the preconditioned gradient norm before lr scaling.  "

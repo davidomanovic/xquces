@@ -15,6 +15,7 @@ from xquces.ucj.parameterization import (
     ov_params_from_unitary,
 )
 
+
 def _ucj_ansatz_from_ffsim_stock(stock: ffsim.UCJOpSpinBalanced) -> UCJAnsatz:
     layers: list[UCJLayer] = []
     for mats, u in zip(stock.diag_coulomb_mats, stock.orbital_rotations):
@@ -28,7 +29,9 @@ def _ucj_ansatz_from_ffsim_stock(stock: ffsim.UCJOpSpinBalanced) -> UCJAnsatz:
                     same_spin_params=same.copy(),
                     mixed_spin_params=mixed.copy(),
                 ),
-                orbital_rotation=canonicalize_unitary(np.asarray(u, dtype=np.complex128)),
+                orbital_rotation=canonicalize_unitary(
+                    np.asarray(u, dtype=np.complex128)
+                ),
             )
         )
 
@@ -42,6 +45,7 @@ def _ucj_ansatz_from_ffsim_stock(stock: ffsim.UCJOpSpinBalanced) -> UCJAnsatz:
         layers=tuple(layers),
         final_orbital_rotation=final_orbital_rotation,
     )
+
 
 def _canonicalize_real_columns(mat: np.ndarray, tol: float = 1e-12) -> np.ndarray:
     mat = np.array(mat, dtype=np.float64, copy=True)
@@ -74,7 +78,9 @@ def _canonicalize_df_term(
     eigvecs = eigvecs[:, order]
     eigvecs = _canonicalize_real_columns(eigvecs, tol=tol)
 
-    u = canonicalize_unitary(np.asarray(orbital_rotation, dtype=np.complex128) @ eigvecs)
+    u = canonicalize_unitary(
+        np.asarray(orbital_rotation, dtype=np.complex128) @ eigvecs
+    )
     z_canonical = np.diag(eigvals.astype(np.float64))
     return z_canonical, u
 
@@ -89,6 +95,7 @@ def _df_term_sort_key(diag_coulomb_mat: np.ndarray, orbital_rotation: np.ndarray
         tuple(np.round(u.real.ravel(), 14)),
         tuple(np.round(u.imag.ravel(), 14)),
     )
+
 
 def _orbital_rotation_from_t1_amplitudes(t1: np.ndarray) -> np.ndarray:
     t1 = np.asarray(t1, dtype=np.complex128)
@@ -191,7 +198,9 @@ class UCJBalancedDFSeed:
         )
         return _ucj_ansatz_from_ffsim_stock(stock)
 
-    def build_parameters(self) -> tuple[UCJAnsatz, UCJSpinBalancedParameterization, np.ndarray]:
+    def build_parameters(
+        self,
+    ) -> tuple[UCJAnsatz, UCJSpinBalancedParameterization, np.ndarray]:
         ansatz = self.build_ansatz()
         param = UCJSpinBalancedParameterization(
             norb=ansatz.norb,
@@ -220,7 +229,9 @@ class GaugeFixedUCJBalancedDFSeed:
         ansatz, _, _ = self.build_parameters()
         return ansatz
 
-    def build_parameters(self) -> tuple[UCJAnsatz, GaugeFixedUCJSpinBalancedParameterization, np.ndarray]:
+    def build_parameters(
+        self,
+    ) -> tuple[UCJAnsatz, GaugeFixedUCJSpinBalancedParameterization, np.ndarray]:
         ansatz = UCJBalancedDFSeed(
             t2=self.t2,
             t1=self.t1,
@@ -289,7 +300,9 @@ class UCJRestrictedHeuristicSeed:
             final_orbital_rotation=final_orbital_rotation,
         )
 
-    def build_parameters(self) -> tuple[UCJAnsatz, UCJSpinRestrictedParameterization, np.ndarray]:
+    def build_parameters(
+        self,
+    ) -> tuple[UCJAnsatz, UCJSpinRestrictedParameterization, np.ndarray]:
         ansatz = self.build_ansatz()
         param = UCJSpinRestrictedParameterization(
             norb=ansatz.norb,
@@ -330,7 +343,9 @@ class UCJRestrictedProjectedDFSeed:
         ).build_ansatz()
         return project_spin_balanced_to_spin_restricted(balanced)
 
-    def build_parameters(self) -> tuple[UCJAnsatz, UCJSpinRestrictedParameterization, np.ndarray]:
+    def build_parameters(
+        self,
+    ) -> tuple[UCJAnsatz, UCJSpinRestrictedParameterization, np.ndarray]:
         ansatz = self.build_ansatz()
         param = UCJSpinRestrictedParameterization(
             norb=ansatz.norb,
@@ -371,7 +386,9 @@ class GaugeFixedUCJRestrictedProjectedDFSeed:
         ).build_ansatz()
         return project_spin_balanced_to_spin_restricted(balanced)
 
-    def build_parameters(self) -> tuple[UCJAnsatz, GaugeFixedUCJSpinRestrictedParameterization, np.ndarray]:
+    def build_parameters(
+        self,
+    ) -> tuple[UCJAnsatz, GaugeFixedUCJSpinRestrictedParameterization, np.ndarray]:
         ansatz = self.build_ansatz()
         nocc = np.asarray(self.t2).shape[0]
         param = GaugeFixedUCJSpinRestrictedParameterization(

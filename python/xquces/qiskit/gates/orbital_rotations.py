@@ -5,13 +5,21 @@ import math
 from collections.abc import Iterator, Sequence
 
 import numpy as np
-from qiskit.circuit import CircuitInstruction, Gate, QuantumCircuit, QuantumRegister, Qubit
+from qiskit.circuit import (
+    CircuitInstruction,
+    Gate,
+    QuantumCircuit,
+    QuantumRegister,
+    Qubit,
+)
 from qiskit.circuit.library import PhaseGate, XXPlusYYGate
 
 from xquces.orbitals import givens_decomposition
 
 
-def _validate_unitary(mat: np.ndarray, name: str, rtol: float, atol: float) -> np.ndarray:
+def _validate_unitary(
+    mat: np.ndarray, name: str, rtol: float, atol: float
+) -> np.ndarray:
     out = np.asarray(mat, dtype=np.complex128)
     if out.ndim != 2 or out.shape[0] != out.shape[1]:
         raise ValueError(f"{name} must be a square matrix")
@@ -28,7 +36,11 @@ def _normalize_spinful_orbital_rotation(
     atol: float,
 ) -> tuple[np.ndarray, np.ndarray]:
     if isinstance(orbital_rotation, np.ndarray) and orbital_rotation.ndim == 2:
-        mat = _validate_unitary(orbital_rotation, "orbital_rotation", rtol, atol) if validate else np.asarray(orbital_rotation, dtype=np.complex128)
+        mat = (
+            _validate_unitary(orbital_rotation, "orbital_rotation", rtol, atol)
+            if validate
+            else np.asarray(orbital_rotation, dtype=np.complex128)
+        )
         if mat.shape != (norb, norb):
             raise ValueError("orbital_rotation has wrong shape")
         return mat, mat
@@ -38,13 +50,21 @@ def _normalize_spinful_orbital_rotation(
     if mat_a is None:
         out_a = identity
     else:
-        out_a = _validate_unitary(mat_a, "alpha orbital_rotation", rtol, atol) if validate else np.asarray(mat_a, dtype=np.complex128)
+        out_a = (
+            _validate_unitary(mat_a, "alpha orbital_rotation", rtol, atol)
+            if validate
+            else np.asarray(mat_a, dtype=np.complex128)
+        )
         if out_a.shape != (norb, norb):
             raise ValueError("alpha orbital_rotation has wrong shape")
     if mat_b is None:
         out_b = identity
     else:
-        out_b = _validate_unitary(mat_b, "beta orbital_rotation", rtol, atol) if validate else np.asarray(mat_b, dtype=np.complex128)
+        out_b = (
+            _validate_unitary(mat_b, "beta orbital_rotation", rtol, atol)
+            if validate
+            else np.asarray(mat_b, dtype=np.complex128)
+        )
         if out_b.shape != (norb, norb):
             raise ValueError("beta orbital_rotation has wrong shape")
     return out_a, out_b
@@ -69,21 +89,27 @@ class OrbitalRotationJW(Gate):
         atol: float = 1e-8,
     ):
         self.norb = int(norb)
-        self.orbital_rotation_a, self.orbital_rotation_b = _normalize_spinful_orbital_rotation(
-            self.norb,
-            orbital_rotation,
-            validate,
-            rtol,
-            atol,
+        self.orbital_rotation_a, self.orbital_rotation_b = (
+            _normalize_spinful_orbital_rotation(
+                self.norb,
+                orbital_rotation,
+                validate,
+                rtol,
+                atol,
+            )
         )
         super().__init__("orbital_rotation_jw", 2 * self.norb, [], label=label)
 
     def _define(self) -> None:
         qubits = QuantumRegister(self.num_qubits)
         circuit = QuantumCircuit(qubits, name=self.name)
-        for instruction in _orbital_rotation_jw(qubits[: self.norb], self.orbital_rotation_a):
+        for instruction in _orbital_rotation_jw(
+            qubits[: self.norb], self.orbital_rotation_a
+        ):
             circuit.append(instruction)
-        for instruction in _orbital_rotation_jw(qubits[self.norb :], self.orbital_rotation_b):
+        for instruction in _orbital_rotation_jw(
+            qubits[self.norb :], self.orbital_rotation_b
+        ):
             circuit.append(instruction)
         self.definition = circuit
 

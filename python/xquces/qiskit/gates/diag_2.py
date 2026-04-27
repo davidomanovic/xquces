@@ -4,7 +4,13 @@ import itertools
 from collections.abc import Iterator, Sequence
 
 import numpy as np
-from qiskit.circuit import CircuitInstruction, Gate, QuantumCircuit, QuantumRegister, Qubit
+from qiskit.circuit import (
+    CircuitInstruction,
+    Gate,
+    QuantumCircuit,
+    QuantumRegister,
+    Qubit,
+)
 from qiskit.circuit.library import PhaseGate, RZZGate
 
 
@@ -160,8 +166,12 @@ class Diag2SpinBalancedJW(Gate):
         label: str | None = None,
     ):
         self.norb = int(norb)
-        self.same_spin_params = _as_square_real_matrix(same_spin_params, self.norb, "same_spin_params")
-        self.mixed_spin_params = _as_square_real_matrix(mixed_spin_params, self.norb, "mixed_spin_params")
+        self.same_spin_params = _as_square_real_matrix(
+            same_spin_params, self.norb, "same_spin_params"
+        )
+        self.mixed_spin_params = _as_square_real_matrix(
+            mixed_spin_params, self.norb, "mixed_spin_params"
+        )
         self.time = float(time)
         self.emit_one_body_phases = bool(emit_one_body_phases)
         super().__init__("igcr2_diag2_balanced_jw", 2 * self.norb, [], label=label)

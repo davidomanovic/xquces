@@ -308,8 +308,7 @@ def minimize_linear_method(
         njev += 1
 
         if previous_energy is not None and (
-            abs(previous_energy - energy)
-            / max(abs(previous_energy), abs(energy), 1.0)
+            abs(previous_energy - energy) / max(abs(previous_energy), abs(energy), 1.0)
             <= ftol
         ):
             success = True
@@ -421,7 +420,9 @@ def minimize_linear_method(
 
         step_2 = float(np.linalg.norm(param_update))
         step_inf = float(np.max(np.abs(param_update))) if len(param_update) else 0.0
-        delta_e = float("nan") if previous_energy is None else float(energy - previous_energy)
+        delta_e = (
+            float("nan") if previous_energy is None else float(energy - previous_energy)
+        )
         rel_delta_e = (
             float("nan")
             if previous_energy is None

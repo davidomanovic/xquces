@@ -263,7 +263,9 @@ class RCCSDContinuation:
         conv_tol_normt: float = 1e-8,
         max_cycle: int = 200,
     ):
-        self.active_space = None if active_space is None else tuple(int(i) for i in active_space)
+        self.active_space = (
+            None if active_space is None else tuple(int(i) for i in active_space)
+        )
         self.conv_tol = float(conv_tol)
         self.conv_tol_normt = float(conv_tol_normt)
         self.max_cycle = int(max_cycle)
@@ -310,7 +312,9 @@ class MolecularForwardContinuator:
         rhf_init_guesses: Sequence[str] = ("atom", "minao", "hcore", "1e"),
         rhf_random_trials: int = 4,
     ):
-        self.active_space = None if active_space is None else tuple(int(i) for i in active_space)
+        self.active_space = (
+            None if active_space is None else tuple(int(i) for i in active_space)
+        )
         self.track_orbitals = bool(track_orbitals)
         self.warm_start_scf = bool(warm_start_scf)
         self.run_ccsd = bool(run_ccsd)
@@ -454,7 +458,9 @@ class GCR2ForwardOptimizer:
         use_ccsd_seed: bool = False,
         n_reps: int = 1,
         rng_seed: int = 1234,
-        start_selector: Callable[[list[tuple[str, np.ndarray]]], list[tuple[str, np.ndarray]]]
+        start_selector: Callable[
+            [list[tuple[str, np.ndarray]]], list[tuple[str, np.ndarray]]
+        ]
         | None = None,
     ):
         self.random_multistarts = int(random_multistarts)
@@ -549,7 +555,12 @@ class GCR2ForwardOptimizer:
                 state = np.asarray(params_to_vec(result.x), dtype=np.complex128)
                 energy = float(np.real(np.vdot(state, operator @ state)))
                 objective = float(np.real(np.vdot(state, objective_operator @ state)))
-            except (FloatingPointError, RuntimeError, ValueError, np.linalg.LinAlgError):
+            except (
+                FloatingPointError,
+                RuntimeError,
+                ValueError,
+                np.linalg.LinAlgError,
+            ):
                 continue
             if not np.isfinite(energy) or not np.isfinite(objective):
                 continue

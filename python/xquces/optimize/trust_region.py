@@ -60,9 +60,7 @@ def minimize_tangent_trust_region(
             f"Unsupported hessp_mode {hessp_mode!r}. Use 'gradient_fd' or 'tangent_space'."
         )
     if hessp_fd_epsilon <= 0:
-        raise ValueError(
-            f"hessp_fd_epsilon must be positive. Got {hessp_fd_epsilon}."
-        )
+        raise ValueError(f"hessp_fd_epsilon must be positive. Got {hessp_fd_epsilon}.")
 
     if options is None:
         options = {}
@@ -86,8 +84,12 @@ def minimize_tangent_trust_region(
         if orthogonalize_jacobian:
             jac_mat = _orthogonalize_columns(jac_mat, psi)
 
-        h_psi = np.asarray(_apply_hamiltonian(hamiltonian, psi), dtype=np.complex128).reshape(-1)
-        h_jac = np.asarray(_apply_hamiltonian(hamiltonian, jac_mat), dtype=np.complex128)
+        h_psi = np.asarray(
+            _apply_hamiltonian(hamiltonian, psi), dtype=np.complex128
+        ).reshape(-1)
+        h_jac = np.asarray(
+            _apply_hamiltonian(hamiltonian, jac_mat), dtype=np.complex128
+        )
 
         objective_energy = (
             float(expectation(psi))
@@ -135,7 +137,9 @@ def minimize_tangent_trust_region(
             tangent_vec = jac_mat @ p
             h_tangent_vec = h_jac @ p
             overlap_vec = jac_mat.conj().T @ tangent_vec
-            hv = 2.0 * np.real(jac_mat.conj().T @ h_tangent_vec - model_energy * overlap_vec)
+            hv = 2.0 * np.real(
+                jac_mat.conj().T @ h_tangent_vec - model_energy * overlap_vec
+            )
             return np.asarray(hv, dtype=np.float64)
 
         pnorm = float(np.linalg.norm(p))

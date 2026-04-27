@@ -352,9 +352,7 @@ def minimize_subspace_linear_method(
         overlap_mat_reg = overlap_mat
         if tikhonov_mu > 0:
             overlap_mat_reg = overlap_mat.copy()
-            overlap_mat_reg[1:, 1:] += tikhonov_mu * np.eye(
-                overlap_mat.shape[0] - 1
-            )
+            overlap_mat_reg[1:, 1:] += tikhonov_mu * np.eye(overlap_mat.shape[0] - 1)
 
         best_energy = float("inf")
         best_vec: np.ndarray | None = None
@@ -420,7 +418,10 @@ def minimize_subspace_linear_method(
                     scale = gradient_step * step_shrink**backtrack
                     trial_step = scale * direction
                     trial_energy, trial_vec = energy_at(params + trial_step)
-                    if trial_energy <= energy + accept_tol and trial_energy < best_energy:
+                    if (
+                        trial_energy <= energy + accept_tol
+                        and trial_energy < best_energy
+                    ):
                         best_energy = trial_energy
                         best_vec = trial_vec
                         best_step = trial_step

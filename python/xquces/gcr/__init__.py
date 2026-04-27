@@ -13,6 +13,7 @@ from xquces.gcr.parameterization import (
     GCRSpinRestrictedParameterization,
 )
 from xquces.gcr.init import GaugeFixedGCRBalancedDFSeed
+from xquces.gcr.igcr import IGCRSpinRestrictedParameterization
 from xquces.gcr.igcr2 import IGCR2SpinRestrictedParameterization
 from xquces.gcr.igcr23 import IGCR23Ansatz, IGCR23SpinRestrictedParameterization
 from xquces.gcr.commutator_gcr2 import (
@@ -44,14 +45,13 @@ from xquces.gcr.doci_reference_gcr2 import (
 )
 from xquces.gcr.pair_uccd_reference import (
     GCR2PairUCCDParameterization,
-    GCR3PairUCCDParameterization,
-    GCR4PairUCCDParameterization,
-    HigherOrderLiftSeed,
-)
-from xquces.gcr.product_pair_uccd_reference import (
     GCR2ProductPairUCCDParameterization,
+    GCR3PairUCCDParameterization,
     GCR3ProductPairUCCDParameterization,
+    GCR4PairUCCDParameterization,
     GCR4ProductPairUCCDParameterization,
+    GCRPairUCCDParameterization,
+    HigherOrderLiftSeed,
 )
 from xquces.gcr.noci_reference_gcr2 import (
     GCR2NOCIReferenceAnsatz,
@@ -111,6 +111,7 @@ __all__ = [
     "GCR3PairUCCDParameterization",
     "GCR3ProductPairUCCDParameterization",
     "GCR4PairUCCDParameterization",
+    "GCRPairUCCDParameterization",
     "HigherOrderLiftSeed",
     "GCR4ProductPairUCCDParameterization",
     "GCR2NOCIReferenceAnsatz",
@@ -123,6 +124,7 @@ __all__ = [
     "apply_gcr2_pairhop_product_middle",
     "gcr2_pairhop_middle_generator",
     "IGCR2SpinRestrictedParameterization",
+    "IGCRSpinRestrictedParameterization",
     "IGCR23Ansatz",
     "IGCR23SpinRestrictedParameterization",
     "IGCR3SpinRestrictedParameterization",

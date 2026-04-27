@@ -152,18 +152,24 @@ def apply_igcr2_spin_restricted(
 ) -> np.ndarray:
     arr = np.array(vec, dtype=np.complex128, copy=copy)
     if right_orbital_rotation is not None:
-        arr = apply_orbital_rotation(arr, right_orbital_rotation, norb=norb, nelec=nelec, copy=False)
+        arr = apply_orbital_rotation(
+            arr, right_orbital_rotation, norb=norb, nelec=nelec, copy=False
+        )
 
     pair_params = np.asarray(pair_params, dtype=np.float64) * time
 
     state2 = reshape_state(arr, norb, nelec)
     occ_a = occ_indicator_rows(norb, nelec[0])
     occ_b = occ_indicator_rows(norb, nelec[1])
-    apply_igcr2_spin_restricted_in_place_num_rep(state2, pair_params, norb, occ_a, occ_b)
+    apply_igcr2_spin_restricted_in_place_num_rep(
+        state2, pair_params, norb, occ_a, occ_b
+    )
     arr = flatten_state(state2)
 
     if left_orbital_rotation is not None:
-        arr = apply_orbital_rotation(arr, left_orbital_rotation, norb=norb, nelec=nelec, copy=False)
+        arr = apply_orbital_rotation(
+            arr, left_orbital_rotation, norb=norb, nelec=nelec, copy=False
+        )
     return arr
 
 

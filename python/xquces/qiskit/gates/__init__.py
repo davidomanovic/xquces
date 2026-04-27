@@ -14,7 +14,10 @@ from xquces.qiskit.gates.igcr3 import (
     igcr3_jw_circuit,
     igcr3_stateprep_jw_circuit,
 )
-from xquces.qiskit.gates.orbital_rotations import OrbitalRotationJW, OrbitalRotationSpinlessJW
+from xquces.qiskit.gates.orbital_rotations import (
+    OrbitalRotationJW,
+    OrbitalRotationSpinlessJW,
+)
 
 __all__ = [
     "Diag2SpinBalancedJW",

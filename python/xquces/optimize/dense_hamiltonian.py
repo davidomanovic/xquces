@@ -13,9 +13,7 @@ def build_dense_hamiltonian(
     dtype: np.dtype | type | None = None,
 ) -> np.ndarray:
     if hamiltonian.shape[0] != hamiltonian.shape[1]:
-        raise ValueError(
-            f"hamiltonian must be square. Got shape {hamiltonian.shape}."
-        )
+        raise ValueError(f"hamiltonian must be square. Got shape {hamiltonian.shape}.")
 
     dim = hamiltonian.shape[0]
     if dtype is None:

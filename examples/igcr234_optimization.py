@@ -172,11 +172,17 @@ def main():
         def callback(intermediate_result):
             it_counter["k"] += 1
             energy = float(intermediate_result.fun)
-            if hasattr(intermediate_result, "jac") and intermediate_result.jac is not None:
+            if (
+                hasattr(intermediate_result, "jac")
+                and intermediate_result.jac is not None
+            ):
                 gmax = float(np.max(np.abs(intermediate_result.jac)))
             else:
                 gmax = float("nan")
-            if hasattr(intermediate_result, "overlap_mat") and intermediate_result.overlap_mat is not None:
+            if (
+                hasattr(intermediate_result, "overlap_mat")
+                and intermediate_result.overlap_mat is not None
+            ):
                 try:
                     cond = float(np.linalg.cond(intermediate_result.overlap_mat))
                 except np.linalg.LinAlgError:

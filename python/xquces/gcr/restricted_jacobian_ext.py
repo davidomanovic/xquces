@@ -57,7 +57,9 @@ def make_doci_reference_gcr_jacobian(
     def jac(params: np.ndarray) -> np.ndarray:
         params = np.asarray(params, dtype=np.float64)
         if params.shape != (parameterization.n_params,):
-            raise ValueError(f"Expected {(parameterization.n_params,)}, got {params.shape}.")
+            raise ValueError(
+                f"Expected {(parameterization.n_params,)}, got {params.shape}."
+            )
 
         n_left = parameterization.n_left_orbital_rotation_params
         n_diag = parameterization.n_diag_params
@@ -74,7 +76,9 @@ def make_doci_reference_gcr_jacobian(
         u_middle = middle_chart.unitary_from_parameters(middle_params, norb)
 
         kappa_left = _left_chart_kappa(left_chart, left_params, norb, basis=left_basis)
-        kappa_middle = _left_chart_kappa(middle_chart, middle_params, norb, basis=middle_basis)
+        kappa_middle = _left_chart_kappa(
+            middle_chart, middle_params, norb, basis=middle_basis
+        )
 
         rep_left_a = _sector_representation(u_left, norb, nelec[0])
         rep_left_b = _sector_representation(u_left, norb, nelec[1])
@@ -228,7 +232,9 @@ def _apply_spectator_controlled_rotation_derivative(
             copy=False,
         )
         rotated_mat = reshape_state(rotated, norb, nelec)
-        out -= _batch_row_and_col(op_a[None, :, :], op_b[None, :, :], rotated_mat)[0].reshape(-1)
+        out -= _batch_row_and_col(op_a[None, :, :], op_b[None, :, :], rotated_mat)[
+            0
+        ].reshape(-1)
     if sector22.size:
         tmp = np.zeros_like(out)
         tmp[sector22] = np.asarray(vec, dtype=np.complex128)[sector22]
@@ -240,7 +246,9 @@ def _apply_spectator_controlled_rotation_derivative(
             copy=False,
         )
         rotated_mat = reshape_state(rotated, norb, nelec)
-        out += _batch_row_and_col(op_a[None, :, :], op_b[None, :, :], rotated_mat)[0].reshape(-1)
+        out += _batch_row_and_col(op_a[None, :, :], op_b[None, :, :], rotated_mat)[
+            0
+        ].reshape(-1)
     return out
 
 
@@ -257,7 +265,9 @@ def make_spectator_orbital_gcr_jacobian(
     right_basis = _right_chart_basis(right_chart, norb)
     tensor_a = _one_body_tensor(norb, nelec[0])
     tensor_b = _one_body_tensor(norb, nelec[1])
-    reference_mat = reshape_state(np.asarray(reference_vec, dtype=np.complex128), norb, nelec)
+    reference_mat = reshape_state(
+        np.asarray(reference_vec, dtype=np.complex128), norb, nelec
+    )
     dim_a, dim_b = reference_mat.shape
     dim = dim_a * dim_b
     diag_features = _diag_feature_matrix(base, nelec)
@@ -274,11 +284,23 @@ def make_spectator_orbital_gcr_jacobian(
     def jac(params: np.ndarray) -> np.ndarray:
         params = np.asarray(params, dtype=np.float64)
         if params.shape != (parameterization.n_params,):
-            raise ValueError(f"Expected {(parameterization.n_params,)}, got {params.shape}.")
+            raise ValueError(
+                f"Expected {(parameterization.n_params,)}, got {params.shape}."
+            )
 
-        left_public, _, spectator_reduced, right_public = parameterization._split(params)
-        spectator_full = parameterization.full_spectator_params_from_reduced(spectator_reduced)
-        base_public = np.concatenate([left_public, params[n_left_public : n_left_public + n_diag_public], right_public])
+        left_public, _, spectator_reduced, right_public = parameterization._split(
+            params
+        )
+        spectator_full = parameterization.full_spectator_params_from_reduced(
+            spectator_reduced
+        )
+        base_public = np.concatenate(
+            [
+                left_public,
+                params[n_left_public : n_left_public + n_diag_public],
+                right_public,
+            ]
+        )
         native = base._native_parameters_from_public(base_public)
 
         n_left_native = base.n_left_orbital_rotation_params
@@ -304,7 +326,9 @@ def make_spectator_orbital_gcr_jacobian(
         rotated_right = rep_right_a @ reference_mat @ rep_right_b.T
 
         if diag_features.shape[1]:
-            phase_half = np.exp(0.5j * (diag_features @ diag_native)).reshape(dim_a, dim_b)
+            phase_half = np.exp(0.5j * (diag_features @ diag_native)).reshape(
+                dim_a, dim_b
+            )
         else:
             phase_half = np.ones((dim_a, dim_b), dtype=np.complex128)
 
@@ -410,7 +434,9 @@ def make_spectator_orbital_gcr_jacobian(
             native_blocks.append(np.zeros((dim, 0), dtype=np.complex128))
 
         d_base_native = np.hstack(native_blocks)
-        d_base_public = d_base_native if base_transform is None else d_base_native @ base_transform
+        d_base_public = (
+            d_base_native if base_transform is None else d_base_native @ base_transform
+        )
 
         if n_full_spectator:
             spectator_cols_full = np.empty((dim, n_full_spectator), dtype=np.complex128)
@@ -440,8 +466,15 @@ def make_spectator_orbital_gcr_jacobian(
             spectator_cols = np.zeros((dim, n_spectator), dtype=np.complex128)
 
         left_public_block = d_base_public[:, :n_left_public]
-        diag_public_block = d_base_public[:, n_left_public : n_left_public + n_diag_public]
-        right_public_block = d_base_public[:, n_left_public + n_diag_public : n_left_public + n_diag_public + n_right_public]
+        diag_public_block = d_base_public[
+            :, n_left_public : n_left_public + n_diag_public
+        ]
+        right_public_block = d_base_public[
+            :,
+            n_left_public + n_diag_public : n_left_public
+            + n_diag_public
+            + n_right_public,
+        ]
         return np.hstack(
             [
                 left_public_block,
@@ -454,7 +487,9 @@ def make_spectator_orbital_gcr_jacobian(
     return jac
 
 
-def make_restricted_gcr_jacobian(parameterization, reference_vec: np.ndarray, nelec: tuple[int, int]):
+def make_restricted_gcr_jacobian(
+    parameterization, reference_vec: np.ndarray, nelec: tuple[int, int]
+):
     if isinstance(
         parameterization,
         (
@@ -465,7 +500,9 @@ def make_restricted_gcr_jacobian(parameterization, reference_vec: np.ndarray, ne
     ):
         return make_doci_reference_gcr_jacobian(parameterization, reference_vec, nelec)
     if isinstance(parameterization, GCR2SpectatorOrbitalParameterization):
-        return make_spectator_orbital_gcr_jacobian(parameterization, reference_vec, nelec)
+        return make_spectator_orbital_gcr_jacobian(
+            parameterization, reference_vec, nelec
+        )
     return _base_make_restricted_gcr_jacobian(parameterization, reference_vec, nelec)
 
 

@@ -28,7 +28,11 @@ def _validate_pairs(
     allow_diagonal: bool,
 ) -> list[tuple[int, int]]:
     if pairs is None:
-        return _default_triu_indices(norb) if allow_diagonal else _default_upper_indices(norb)
+        return (
+            _default_triu_indices(norb)
+            if allow_diagonal
+            else _default_upper_indices(norb)
+        )
     out: list[tuple[int, int]] = []
     seen: set[tuple[int, int]] = set()
     for p, q in pairs:
@@ -95,7 +99,9 @@ class _AntiHermitianLeftChart:
         rows, cols = np.triu_indices(norb, k=1)
         z = k[rows, cols]
         diag = np.imag(np.diag(k))
-        return np.concatenate([np.real(z), np.imag(z), diag]).astype(np.float64, copy=False)
+        return np.concatenate([np.real(z), np.imag(z), diag]).astype(
+            np.float64, copy=False
+        )
 
 
 @dataclass(frozen=True)
@@ -194,7 +200,9 @@ class _CoupledSpinBalancedDiagonalGaugeMap:
         x_full = self.v @ x_reduced
         return x_full[: self.n_same], x_full[self.n_same :]
 
-    def full_to_reduced(self, same_full: np.ndarray, mixed_full: np.ndarray) -> np.ndarray:
+    def full_to_reduced(
+        self, same_full: np.ndarray, mixed_full: np.ndarray
+    ) -> np.ndarray:
         x_full = np.concatenate(
             [
                 np.asarray(same_full, dtype=np.float64),
@@ -278,7 +286,9 @@ class GCRSpinRestrictedParameterization:
         idx = 0
 
         n = self.n_left_orbital_rotation_params
-        left = self._effective_left_chart.unitary_from_parameters(params[idx : idx + n], self.norb)
+        left = self._effective_left_chart.unitary_from_parameters(
+            params[idx : idx + n], self.norb
+        )
         idx += n
 
         n = self.n_diagonal_params
@@ -290,7 +300,9 @@ class GCRSpinRestrictedParameterization:
         idx += n
 
         n = self.n_right_orbital_rotation_params
-        right = self._effective_right_chart.unitary_from_parameters(params[idx : idx + n], self.norb)
+        right = self._effective_right_chart.unitary_from_parameters(
+            params[idx : idx + n], self.norb
+        )
 
         return GCRAnsatz(
             diagonal=SpinRestrictedSpec(double_params=d, pair_params=p),
@@ -310,7 +322,9 @@ class GCRSpinRestrictedParameterization:
         idx = 0
 
         n = self.n_left_orbital_rotation_params
-        out[idx : idx + n] = self._effective_left_chart.parameters_from_unitary(ansatz.left_orbital_rotation)
+        out[idx : idx + n] = self._effective_left_chart.parameters_from_unitary(
+            ansatz.left_orbital_rotation
+        )
         idx += n
 
         n = self.n_diagonal_params
@@ -319,11 +333,15 @@ class GCRSpinRestrictedParameterization:
 
         n = self.n_pair_params
         if n:
-            out[idx : idx + n] = np.asarray([d.pair_params[p, q] for p, q in pairs], dtype=np.float64)
+            out[idx : idx + n] = np.asarray(
+                [d.pair_params[p, q] for p, q in pairs], dtype=np.float64
+            )
             idx += n
 
         n = self.n_right_orbital_rotation_params
-        out[idx : idx + n] = self._effective_right_chart.parameters_from_unitary(ansatz.right_orbital_rotation)
+        out[idx : idx + n] = self._effective_right_chart.parameters_from_unitary(
+            ansatz.right_orbital_rotation
+        )
 
         return out
 
@@ -338,7 +356,9 @@ class GCRSpinRestrictedParameterization:
         reference_vec = np.asarray(reference_vec, dtype=np.complex128)
 
         def func(params: np.ndarray) -> np.ndarray:
-            return self.ansatz_from_parameters(params).apply(reference_vec, nelec=nelec, copy=True)
+            return self.ansatz_from_parameters(params).apply(
+                reference_vec, nelec=nelec, copy=True
+            )
 
         return func
 
@@ -355,16 +375,24 @@ class GCRSpinBalancedParameterization:
     def __post_init__(self):
         if not (0 <= self.nocc <= self.norb):
             raise ValueError("nocc must satisfy 0 <= nocc <= norb")
-        _validate_pairs(self.same_spin_interaction_pairs, self.norb, allow_diagonal=False)
-        _validate_pairs(self.mixed_spin_interaction_pairs, self.norb, allow_diagonal=True)
+        _validate_pairs(
+            self.same_spin_interaction_pairs, self.norb, allow_diagonal=False
+        )
+        _validate_pairs(
+            self.mixed_spin_interaction_pairs, self.norb, allow_diagonal=True
+        )
 
     @property
     def same_spin_indices(self) -> list[tuple[int, int]]:
-        return _validate_pairs(self.same_spin_interaction_pairs, self.norb, allow_diagonal=False)
+        return _validate_pairs(
+            self.same_spin_interaction_pairs, self.norb, allow_diagonal=False
+        )
 
     @property
     def mixed_spin_indices(self) -> list[tuple[int, int]]:
-        return _validate_pairs(self.mixed_spin_interaction_pairs, self.norb, allow_diagonal=True)
+        return _validate_pairs(
+            self.mixed_spin_interaction_pairs, self.norb, allow_diagonal=True
+        )
 
     @property
     def _effective_left_chart(self):
@@ -413,18 +441,28 @@ class GCRSpinBalancedParameterization:
         idx = 0
 
         n = self.n_left_orbital_rotation_params
-        left = self._effective_left_chart.unitary_from_parameters(params[idx : idx + n], self.norb)
+        left = self._effective_left_chart.unitary_from_parameters(
+            params[idx : idx + n], self.norb
+        )
         idx += n
 
         n = self.n_jastrow_params
-        same_pair_full, mixed_full = self._diag_gauge_map.reduced_to_full(params[idx : idx + n])
+        same_pair_full, mixed_full = self._diag_gauge_map.reduced_to_full(
+            params[idx : idx + n]
+        )
         idx += n
 
-        same = _symmetric_matrix_from_values(same_pair_full, self.norb, self.same_spin_indices)
-        mixed = _symmetric_matrix_from_values(mixed_full, self.norb, self.mixed_spin_indices)
+        same = _symmetric_matrix_from_values(
+            same_pair_full, self.norb, self.same_spin_indices
+        )
+        mixed = _symmetric_matrix_from_values(
+            mixed_full, self.norb, self.mixed_spin_indices
+        )
 
         n = self.n_right_orbital_rotation_params
-        right = self._effective_right_chart.unitary_from_parameters(params[idx : idx + n], self.norb)
+        right = self._effective_right_chart.unitary_from_parameters(
+            params[idx : idx + n], self.norb
+        )
 
         return GCRAnsatz(
             diagonal=SpinBalancedSpec(
@@ -472,7 +510,9 @@ class GCRSpinBalancedParameterization:
         idx = 0
 
         n = self.n_left_orbital_rotation_params
-        out[idx : idx + n] = self._effective_left_chart.parameters_from_unitary(left_eff)
+        out[idx : idx + n] = self._effective_left_chart.parameters_from_unitary(
+            left_eff
+        )
         idx += n
 
         n = self.n_jastrow_params
@@ -491,7 +531,9 @@ class GCRSpinBalancedParameterization:
         if ansatz.norb != self.norb:
             raise ValueError("ansatz norb does not match parameterization")
         if ansatz.n_layers != 1:
-            raise ValueError("only a single-layer UCJ ansatz can be mapped exactly to GCR")
+            raise ValueError(
+                "only a single-layer UCJ ansatz can be mapped exactly to GCR"
+            )
         if not ansatz.is_spin_balanced:
             raise TypeError("expected a spin-balanced ansatz")
         return self.parameters_from_ansatz(gcr_from_ucj_ansatz(ansatz))
@@ -504,6 +546,8 @@ class GCRSpinBalancedParameterization:
         reference_vec = np.asarray(reference_vec, dtype=np.complex128)
 
         def func(params: np.ndarray) -> np.ndarray:
-            return self.ansatz_from_parameters(params).apply(reference_vec, nelec=nelec, copy=True)
+            return self.ansatz_from_parameters(params).apply(
+                reference_vec, nelec=nelec, copy=True
+            )
 
         return func
