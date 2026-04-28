@@ -28,7 +28,6 @@ from xquces.gcr.igcr4 import (
 )
 from xquces.gcr.spin_balanced_igcr4 import (
     IGCR4SpinBalancedFixedSectorParameterization,
-    IGCR4SpinSeparatedFixedSectorParameterization,
 )
 from xquces.orbitals import ov_generator_from_params
 

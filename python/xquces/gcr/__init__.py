@@ -24,6 +24,12 @@ from xquces.gcr.commutator_gcr2 import (
     apply_gcr2_pairhop_product_middle,
     gcr2_pairhop_middle_generator,
 )
+from xquces.gcr.igcr4_spin_projector import (
+    FourOpenShellSingletProjector,
+    IGCR4SpinProjectorAnsatz,
+    IGCR4SpinProjectorParameterization,
+    apply_four_open_shell_singlet_projector_phase,
+)
 from xquces.gcr.bridge_gcr2 import (
     GCR2FullUnitaryChart,
     GCR2SplitBridgeAnsatz,
@@ -69,17 +75,6 @@ from xquces.gcr.igcr3 import IGCR3SpinRestrictedParameterization
 from xquces.gcr.igcr4 import IGCR4SpinRestrictedParameterization
 from xquces.gcr.igcr234 import IGCR234Ansatz, IGCR234SpinRestrictedParameterization
 from xquces.gcr.restricted_jacobian_ext import make_restricted_gcr_jacobian
-from xquces.gcr.spin_balanced_igcr4 import (
-    FixedOrbitalDiagonalModel,
-    FixedSectorDiagonalBasis,
-    IGCR4SpinBalancedFixedSectorAnsatz,
-    IGCR4SpinBalancedFixedSectorParameterization,
-    IGCR4SpinSeparatedFixedSectorAnsatz,
-    IGCR4SpinSeparatedFixedSectorParameterization,
-    make_spin_orbital_diagonal_basis,
-    orbital_rotation_operator,
-    restricted_igcr4_phase_vector,
-)
 
 __all__ = [
     "DiagonalRank",
