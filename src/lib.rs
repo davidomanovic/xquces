@@ -2,6 +2,7 @@ use pyo3::prelude::*;
 
 mod orbital_rotation;
 mod gcr_pairhop;
+mod igcr4_spin_combo6;
 mod pair_uccd;
 mod sqd;
 mod ucj_diag;
@@ -26,6 +27,10 @@ fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(
         ucj_diag::apply_igcr4_spin_restricted_in_place_num_rep,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        igcr4_spin_combo6::apply_igcr4_spin_combo6_in_place_num_rep,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
