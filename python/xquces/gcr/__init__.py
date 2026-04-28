@@ -67,6 +67,12 @@ from xquces.gcr.doci_reference_gcr4 import (
 )
 from xquces.gcr.igcr3 import IGCR3SpinRestrictedParameterization
 from xquces.gcr.igcr4 import IGCR4SpinRestrictedParameterization
+from xquces.gcr.igcr4_spin_projector import (
+    FourOpenShellSingletProjector,
+    IGCR4SpinProjectorAnsatz,
+    IGCR4SpinProjectorParameterization,
+    apply_four_open_shell_singlet_projector_phase,
+)
 from xquces.gcr.igcr234 import IGCR234Ansatz, IGCR234SpinRestrictedParameterization
 from xquces.gcr.restricted_jacobian_ext import make_restricted_gcr_jacobian
 from xquces.gcr.spin_balanced_igcr4 import (
@@ -129,6 +135,10 @@ __all__ = [
     "IGCR23SpinRestrictedParameterization",
     "IGCR3SpinRestrictedParameterization",
     "IGCR4SpinRestrictedParameterization",
+    "FourOpenShellSingletProjector",
+    "IGCR4SpinProjectorAnsatz",
+    "IGCR4SpinProjectorParameterization",
+    "apply_four_open_shell_singlet_projector_phase",
     "IGCR234Ansatz",
     "IGCR234SpinRestrictedParameterization",
     "make_restricted_gcr_jacobian",
