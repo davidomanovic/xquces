@@ -107,9 +107,9 @@ def apply_four_open_shell_singlet_projector_phase(
 
             v1 = state[ia, ib]
             v2 = state[ja, jb]
-            delta = phase_update * (v1 - v2)
+            delta = phase_update * (v1 + v2)
             state[ia, ib] = v1 + delta
-            state[ja, jb] = v2 - delta
+            state[ja, jb] = v2 + delta
 
     return flatten_state(state)
 
