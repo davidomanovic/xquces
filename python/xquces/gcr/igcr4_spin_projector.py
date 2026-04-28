@@ -65,8 +65,8 @@ def _valence_bond_coefficients(
     (a, b), (c, d) = _pairing_from_spin_pair(projector_orbitals, spin_pair)
     return {
         _mask_from_orbitals((a, c), projector_orbitals): 0.5,
-        _mask_from_orbitals((a, d), projector_orbitals): -0.5,
-        _mask_from_orbitals((b, c), projector_orbitals): -0.5,
+        _mask_from_orbitals((a, d), projector_orbitals): 0.5,
+        _mask_from_orbitals((b, c), projector_orbitals): 0.5,
         _mask_from_orbitals((b, d), projector_orbitals): 0.5,
     }
 
@@ -255,13 +255,7 @@ class IGCR4SpinProjectorAnsatz:
 
     def apply(self, vec, nelec, copy=True):
         arr = np.array(vec, dtype=np.complex128, copy=copy)
-        arr = apply_orbital_rotation(
-            arr,
-            self.right,
-            norb=self.norb,
-            nelec=nelec,
-            copy=False,
-        )
+        arr = apply_orbital_rotation(arr, self.right, norb=self.norb, nelec=nelec, copy=False)
         arr = self.base.diagonal_apply(arr, nelec, copy=False) if hasattr(self.base, "diagonal_apply") else self._apply_base_diagonal(arr, nelec)
         arr = apply_four_open_shell_singlet_projector_phase(
             arr,
@@ -271,24 +265,11 @@ class IGCR4SpinProjectorAnsatz:
             self.projector,
             copy=False,
         )
-        return apply_orbital_rotation(
-            arr,
-            self.left,
-            norb=self.norb,
-            nelec=nelec,
-            copy=False,
-        )
+        return apply_orbital_rotation(arr, self.left, norb=self.norb, nelec=nelec, copy=False)
 
     def _apply_base_diagonal(self, vec, nelec):
         from xquces.gcr.igcr4 import apply_igcr4_spin_restricted_diagonal
-
-        return apply_igcr4_spin_restricted_diagonal(
-            vec,
-            self.base.diagonal,
-            self.norb,
-            nelec,
-            copy=False,
-        )
+        return apply_igcr4_spin_restricted_diagonal(vec, self.base.diagonal, self.norb, nelec, copy=False)
 
     @classmethod
     def from_igcr4_ansatz(
@@ -333,13 +314,7 @@ class IGCR4SpinProjectorSetAnsatz:
         if etas.shape != (len(projector_set.spin_pairs),):
             raise ValueError(f"Expected {(len(projector_set.spin_pairs),)}, got {etas.shape}.")
         arr = np.array(vec, dtype=np.complex128, copy=copy)
-        arr = apply_orbital_rotation(
-            arr,
-            self.right,
-            norb=self.norb,
-            nelec=nelec,
-            copy=False,
-        )
+        arr = apply_orbital_rotation(arr, self.right, norb=self.norb, nelec=nelec, copy=False)
         arr = self.base.diagonal_apply(arr, nelec, copy=False) if hasattr(self.base, "diagonal_apply") else self._apply_base_diagonal(arr, nelec)
         arr = apply_four_open_shell_singlet_projector_phases(
             arr,
@@ -349,24 +324,11 @@ class IGCR4SpinProjectorSetAnsatz:
             projector_set,
             copy=False,
         )
-        return apply_orbital_rotation(
-            arr,
-            self.left,
-            norb=self.norb,
-            nelec=nelec,
-            copy=False,
-        )
+        return apply_orbital_rotation(arr, self.left, norb=self.norb, nelec=nelec, copy=False)
 
     def _apply_base_diagonal(self, vec, nelec):
         from xquces.gcr.igcr4 import apply_igcr4_spin_restricted_diagonal
-
-        return apply_igcr4_spin_restricted_diagonal(
-            vec,
-            self.base.diagonal,
-            self.norb,
-            nelec,
-            copy=False,
-        )
+        return apply_igcr4_spin_restricted_diagonal(vec, self.base.diagonal, self.norb, nelec, copy=False)
 
     @classmethod
     def from_igcr4_ansatz(
@@ -434,16 +396,10 @@ class IGCR4SpinProjectorParameterization:
             projector=self.projector.validate(self.norb),
         )
 
-    def params_to_vec(
-        self,
-        reference_vec: np.ndarray,
-        nelec: tuple[int, int],
-    ) -> Callable[[np.ndarray], np.ndarray]:
+    def params_to_vec(self, reference_vec: np.ndarray, nelec: tuple[int, int]) -> Callable[[np.ndarray], np.ndarray]:
         reference_vec = np.asarray(reference_vec, dtype=np.complex128)
-
         def fun(params: np.ndarray) -> np.ndarray:
             return self.ansatz_from_parameters(params).apply(reference_vec, nelec, copy=True)
-
         return fun
 
     def zeros(self) -> np.ndarray:
@@ -524,16 +480,10 @@ class IGCR4SpinProjectorSetParameterization:
             projector_set=self.projector_set.validate(self.norb),
         )
 
-    def params_to_vec(
-        self,
-        reference_vec: np.ndarray,
-        nelec: tuple[int, int],
-    ) -> Callable[[np.ndarray], np.ndarray]:
+    def params_to_vec(self, reference_vec: np.ndarray, nelec: tuple[int, int]) -> Callable[[np.ndarray], np.ndarray]:
         reference_vec = np.asarray(reference_vec, dtype=np.complex128)
-
         def fun(params: np.ndarray) -> np.ndarray:
             return self.ansatz_from_parameters(params).apply(reference_vec, nelec, copy=True)
-
         return fun
 
     def zeros(self) -> np.ndarray:
