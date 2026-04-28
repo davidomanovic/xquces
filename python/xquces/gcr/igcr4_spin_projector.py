@@ -20,27 +20,55 @@ def _validate_distinct_indices(indices: tuple[int, ...], norb: int, name: str) -
     return out
 
 
-def _row_lookup(occ: np.ndarray) -> dict[int, int]:
-    lookup = {}
-    for row, bits in enumerate(occ):
-        key = 0
-        for p, bit in enumerate(bits):
-            if bit:
-                key |= 1 << p
-        lookup[key] = row
-    return lookup
+def _default_spin_pairs(projector_orbitals: tuple[int, int, int, int]) -> tuple[tuple[int, int], ...]:
+    return tuple(itertools.combinations(projector_orbitals, 2))
 
 
-def _bit_key(bits: np.ndarray) -> int:
+def _bit_key(bits: np.ndarray, exclude: set[int] | None = None) -> int:
+    exclude = set() if exclude is None else exclude
     key = 0
     for p, bit in enumerate(bits):
-        if bit:
+        if p not in exclude and bit:
             key |= 1 << p
     return key
 
 
-def _default_spin_pairs(projector_orbitals: tuple[int, int, int, int]) -> tuple[tuple[int, int], ...]:
-    return tuple(itertools.combinations(projector_orbitals, 2))
+def _local_mask(bits: np.ndarray, orbitals: tuple[int, int, int, int]) -> int:
+    key = 0
+    for i, p in enumerate(orbitals):
+        if bits[p]:
+            key |= 1 << i
+    return key
+
+
+def _mask_from_orbitals(selected: tuple[int, ...], orbitals: tuple[int, int, int, int]) -> int:
+    positions = {p: i for i, p in enumerate(orbitals)}
+    key = 0
+    for p in selected:
+        key |= 1 << positions[p]
+    return key
+
+
+def _pairing_from_spin_pair(
+    projector_orbitals: tuple[int, int, int, int],
+    spin_pair: tuple[int, int],
+) -> tuple[tuple[int, int], tuple[int, int]]:
+    pair = tuple(sorted(spin_pair))
+    complement = tuple(sorted(p for p in projector_orbitals if p not in pair))
+    return pair, complement
+
+
+def _valence_bond_coefficients(
+    projector_orbitals: tuple[int, int, int, int],
+    spin_pair: tuple[int, int],
+) -> dict[int, float]:
+    (a, b), (c, d) = _pairing_from_spin_pair(projector_orbitals, spin_pair)
+    return {
+        _mask_from_orbitals((a, c), projector_orbitals): 0.5,
+        _mask_from_orbitals((a, d), projector_orbitals): -0.5,
+        _mask_from_orbitals((b, c), projector_orbitals): -0.5,
+        _mask_from_orbitals((b, d), projector_orbitals): 0.5,
+    }
 
 
 @dataclass(frozen=True)
@@ -69,12 +97,10 @@ class FourOpenShellSingletProjectorSet:
         projector_orbitals = _validate_distinct_indices(self.projector_orbitals, norb, "projector_orbitals")
         if len(projector_orbitals) != 4:
             raise ValueError("projector_orbitals must contain exactly four orbitals")
-
         if self.spin_pairs is None:
             spin_pairs = _default_spin_pairs(projector_orbitals)
         else:
             spin_pairs = tuple(tuple(int(x) for x in pair) for pair in self.spin_pairs)
-
         out = []
         seen = set()
         for pair in spin_pairs:
@@ -88,12 +114,59 @@ class FourOpenShellSingletProjectorSet:
                 raise ValueError("spin_pairs must not contain duplicates")
             seen.add(spin_pair)
             out.append(spin_pair)
-
         if len(out) == 0:
             raise ValueError("spin_pairs must not be empty")
-
         return FourOpenShellSingletProjectorSet(projector_orbitals, tuple(out))
 
+
+def _four_open_shell_groups(
+    norb: int,
+    nelec: tuple[int, int],
+    projector_orbitals: tuple[int, int, int, int],
+) -> dict[tuple[int, int], dict[int, tuple[int, int]]]:
+    occ_alpha = occ_indicator_rows(norb, nelec[0])
+    occ_beta = occ_indicator_rows(norb, nelec[1])
+    orbital_set = set(projector_orbitals)
+    full_mask = (1 << len(projector_orbitals)) - 1
+    groups: dict[tuple[int, int], dict[int, tuple[int, int]]] = {}
+    for ia, alpha_bits in enumerate(occ_alpha):
+        alpha_mask = _local_mask(alpha_bits, projector_orbitals)
+        if alpha_mask.bit_count() != 2:
+            continue
+        alpha_out_key = _bit_key(alpha_bits, orbital_set)
+        for ib, beta_bits in enumerate(occ_beta):
+            beta_mask = _local_mask(beta_bits, projector_orbitals)
+            if beta_mask != (full_mask ^ alpha_mask):
+                continue
+            if any(int(alpha_bits[p]) + int(beta_bits[p]) != 1 for p in projector_orbitals):
+                continue
+            beta_out_key = _bit_key(beta_bits, orbital_set)
+            groups.setdefault((alpha_out_key, beta_out_key), {})[alpha_mask] = (ia, ib)
+    return groups
+
+
+def _apply_valence_bond_phase(
+    state: np.ndarray,
+    groups: dict[tuple[int, int], dict[int, tuple[int, int]]],
+    projector_orbitals: tuple[int, int, int, int],
+    spin_pair: tuple[int, int],
+    eta: float,
+    time: float,
+) -> None:
+    phase_update = np.exp(1j * float(eta) * float(time)) - 1.0
+    if abs(phase_update) <= 0.0:
+        return
+    coeffs = _valence_bond_coefficients(projector_orbitals, spin_pair)
+    for group in groups.values():
+        if any(mask not in group for mask in coeffs):
+            continue
+        amplitude = 0.0j
+        for mask, coeff in coeffs.items():
+            ia, ib = group[mask]
+            amplitude += coeff * state[ia, ib]
+        for mask, coeff in coeffs.items():
+            ia, ib = group[mask]
+            state[ia, ib] += phase_update * coeff * amplitude
 
 
 def apply_four_open_shell_singlet_projector_phase(
@@ -110,48 +183,16 @@ def apply_four_open_shell_singlet_projector_phase(
     arr = np.array(vec, dtype=np.complex128, copy=copy)
     if abs(float(eta) * float(time)) <= 0.0:
         return arr
-
     state = reshape_state(arr, norb, nelec)
-    occ_alpha = occ_indicator_rows(norb, nelec[0])
-    occ_beta = occ_indicator_rows(norb, nelec[1])
-    alpha_lookup = _row_lookup(occ_alpha)
-    beta_lookup = _row_lookup(occ_beta)
-
-    p, q = projector.spin_pair
-    phase_update = 0.5 * (np.exp(1j * float(eta) * float(time)) - 1.0)
-
-    for ia, alpha_bits in enumerate(occ_alpha):
-        alpha_p = int(alpha_bits[p])
-        alpha_q = int(alpha_bits[q])
-        if alpha_p == alpha_q:
-            continue
-        for ib, beta_bits in enumerate(occ_beta):
-            beta_p = int(beta_bits[p])
-            beta_q = int(beta_bits[q])
-            if beta_p == beta_q:
-                continue
-            if alpha_p != beta_q or alpha_q != beta_p:
-                continue
-            if alpha_p != 1 or beta_q != 1:
-                continue
-            if any(int(alpha_bits[r]) + int(beta_bits[r]) != 1 for r in projector.projector_orbitals):
-                continue
-
-            alpha_key = _bit_key(alpha_bits)
-            beta_key = _bit_key(beta_bits)
-            alpha_partner_key = alpha_key ^ (1 << p) ^ (1 << q)
-            beta_partner_key = beta_key ^ (1 << p) ^ (1 << q)
-            ja = alpha_lookup[alpha_partner_key]
-            jb = beta_lookup[beta_partner_key]
-            if (ia, ib) > (ja, jb):
-                continue
-
-            v1 = state[ia, ib]
-            v2 = state[ja, jb]
-            delta = phase_update * (v1 + v2)
-            state[ia, ib] = v1 + delta
-            state[ja, jb] = v2 + delta
-
+    groups = _four_open_shell_groups(norb, nelec, projector.projector_orbitals)
+    _apply_valence_bond_phase(
+        state,
+        groups,
+        projector.projector_orbitals,
+        projector.spin_pair,
+        float(eta),
+        float(time),
+    )
     return flatten_state(state)
 
 
@@ -170,20 +211,20 @@ def apply_four_open_shell_singlet_projector_phases(
     if etas.shape != (len(projector_set.spin_pairs),):
         raise ValueError(f"Expected {(len(projector_set.spin_pairs),)}, got {etas.shape}.")
     arr = np.array(vec, dtype=np.complex128, copy=copy)
+    if not np.any(np.abs(etas * float(time)) > 0.0):
+        return arr
+    state = reshape_state(arr, norb, nelec)
+    groups = _four_open_shell_groups(norb, nelec, projector_set.projector_orbitals)
     for eta, spin_pair in zip(etas, projector_set.spin_pairs):
-        if abs(float(eta) * float(time)) <= 0.0:
-            continue
-        projector = FourOpenShellSingletProjector(projector_set.projector_orbitals, spin_pair)
-        arr = apply_four_open_shell_singlet_projector_phase(
-            arr,
+        _apply_valence_bond_phase(
+            state,
+            groups,
+            projector_set.projector_orbitals,
+            spin_pair,
             float(eta),
-            norb,
-            nelec,
-            projector,
-            time=time,
-            copy=False,
+            float(time),
         )
-    return arr
+    return flatten_state(state)
 
 
 @dataclass(frozen=True)
