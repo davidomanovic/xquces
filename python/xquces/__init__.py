@@ -101,7 +101,11 @@ from xquces.gcr import (
     IGCR23SpinRestrictedParameterization,
     IGCR234Ansatz,
     IGCR234SpinRestrictedParameterization,
+    IGCR4PairSpinAnsatz,
+    IGCR4PairSpinParameterization,
+    IGCR4PairSpinSpec,
     IGCRSpinRestrictedParameterization,
+    default_adjacent_spin_pairs,
     gcr_from_ucj_ansatz,
 )
 from xquces.gcr.init import GaugeFixedGCRBalancedDFSeed
@@ -231,6 +235,10 @@ __all__ = [
     "IGCR23SpinRestrictedParameterization",
     "IGCR3SpinRestrictedParameterization",
     "IGCR4SpinRestrictedParameterization",
+    "IGCR4PairSpinAnsatz",
+    "IGCR4PairSpinParameterization",
+    "IGCR4PairSpinSpec",
+    "default_adjacent_spin_pairs",
     "IGCR234Ansatz",
     "IGCR234SpinRestrictedParameterization",
     "IGCRSpinRestrictedParameterization",
