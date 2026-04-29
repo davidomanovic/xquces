@@ -131,8 +131,6 @@ __all__ = [
     "FixedSectorDiagonalBasis",
     "IGCR4SpinBalancedFixedSectorAnsatz",
     "IGCR4SpinBalancedFixedSectorParameterization",
-    "IGCR4SpinSeparatedFixedSectorAnsatz",
-    "IGCR4SpinSeparatedFixedSectorParameterization",
     "make_spin_orbital_diagonal_basis",
     "orbital_rotation_operator",
     "rank_mod_constant",
