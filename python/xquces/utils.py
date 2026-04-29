@@ -8,7 +8,6 @@ import pyscf.mcscf
 import pyscf.scf
 from pyscf.fci.spin_op import contract_ss
 
-
 def build_diatom(atom1: str, atom2: str, R: float, basis: str, *, symmetry: bool | str = "Dooh"):
     mol = pyscf.gto.Mole()
     mol.build(
@@ -92,11 +91,11 @@ def run_lowest_rhf(
     *,
     dm0=None,
     init_guesses=("atom", "minao", "hcore", "1e"),
-    random_trials: int = 4,
+    random_trials: int = 32,
     random_scale: float = 0.02,
     random_seed: int = 9173,
     conv_tol: float = 1e-12,
-    max_cycle: int = 200,
+    max_cycle: int = 500,
 ):
     candidates = []
 
