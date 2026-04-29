@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from xquces._lib import apply_igcr2_spin_restricted_in_place_num_rep
+from xquces._lib import apply_igcr4_pair_spin_in_place_num_rep
 from xquces._lib import apply_ucj_spin_balanced_in_place_num_rep
 from xquces._lib import apply_ucj_spin_restricted_in_place_num_rep
 from xquces.basis import flatten_state, occ_indicator_rows, occ_rows, reshape_state
@@ -166,6 +167,56 @@ def apply_igcr2_spin_restricted(
     )
     arr = flatten_state(state2)
 
+    if left_orbital_rotation is not None:
+        arr = apply_orbital_rotation(
+            arr, left_orbital_rotation, norb=norb, nelec=nelec, copy=False
+        )
+    return arr
+
+
+def apply_igcr4_pair_spin(
+    vec: np.ndarray,
+    theta_singlet: np.ndarray,
+    theta_triplet: np.ndarray,
+    norb: int,
+    nelec: tuple[int, int],
+    spin_pairs: np.ndarray,
+    time: float = 1.0,
+    left_orbital_rotation: np.ndarray | None = None,
+    right_orbital_rotation: np.ndarray | None = None,
+    copy: bool = True,
+) -> np.ndarray:
+    arr = np.array(vec, dtype=np.complex128, copy=copy)
+    if right_orbital_rotation is not None:
+        arr = apply_orbital_rotation(
+            arr, right_orbital_rotation, norb=norb, nelec=nelec, copy=False
+        )
+    theta_singlet = np.asarray(theta_singlet, dtype=np.float64) * float(time)
+    theta_triplet = np.asarray(theta_triplet, dtype=np.float64) * float(time)
+    spin_pairs = np.asarray(spin_pairs, dtype=np.uintp)
+    if spin_pairs.ndim != 2 or spin_pairs.shape[1] != 2:
+        raise ValueError("spin_pairs must have shape (n_pairs, 2)")
+    n_pairs = spin_pairs.shape[0]
+    if theta_singlet.shape != (n_pairs, n_pairs):
+        raise ValueError("theta_singlet must have shape (n_pairs, n_pairs)")
+    if theta_triplet.shape != (n_pairs, n_pairs):
+        raise ValueError("theta_triplet must have shape (n_pairs, n_pairs)")
+    theta_singlet = np.triu(theta_singlet, 1).copy()
+    theta_triplet = np.triu(theta_triplet, 1).copy()
+
+    state2 = reshape_state(arr, norb, nelec)
+    occ_a = occ_indicator_rows(norb, nelec[0])
+    occ_b = occ_indicator_rows(norb, nelec[1])
+    apply_igcr4_pair_spin_in_place_num_rep(
+        state2,
+        theta_singlet,
+        theta_triplet,
+        norb,
+        occ_a,
+        occ_b,
+        spin_pairs,
+    )
+    arr = flatten_state(state2)
     if left_orbital_rotation is not None:
         arr = apply_orbital_rotation(
             arr, left_orbital_rotation, norb=norb, nelec=nelec, copy=False
