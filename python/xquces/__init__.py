@@ -80,7 +80,10 @@ from xquces.state_parameterization import (
     apply_ansatz_parameterization,
     make_composite_reference_ansatz_jacobian,
 )
-from xquces.hamiltonians import MolecularHamiltonianLinearOperator
+from xquces.hamiltonians import (
+    CanonicalTransformedHamiltonianLinearOperator,
+    MolecularHamiltonianLinearOperator,
+)
 from xquces.sqd import run_sqd_from_statevector
 from xquces.gcr import (
     GCR2DOCIReferenceParameterization,
@@ -197,6 +200,7 @@ __all__ = [
     "apply_ansatz_parameterization",
     "make_composite_reference_ansatz_jacobian",
     "MolecularHamiltonianLinearOperator",
+    "CanonicalTransformedHamiltonianLinearOperator",
     "run_sqd_from_statevector",
     "GCRAnsatz",
     "GCRSpinBalancedParameterization",
