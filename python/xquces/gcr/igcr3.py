@@ -884,23 +884,19 @@ class IGCR3SpinRestrictedParameterization:
         tau = d.tau_matrix()
         omega = d.omega_vector()
 
-        cubic_onebody_phase = np.zeros(self.norb, dtype=np.float64)
-        reduced_pair_values = None
-        reduced_cubic_values = None
-        if self.uses_reduced_cubic_chart:
-            full_pair_values = np.asarray(
-                [pair_eff[p, q] for p, q in _default_pair_indices(self.norb)],
-                dtype=np.float64,
-            )
-            full_cubic = np.concatenate(
-                [
-                    _values_from_ordered_matrix(tau, _default_tau_indices(self.norb)),
-                    omega,
-                ]
-            )
-            reduced_pair_values, reduced_cubic_values, cubic_onebody_phase = (
-                self.cubic_reduction.reduce_full(full_pair_values, full_cubic)
-            )
+        full_pair_values = np.asarray(
+            [pair_eff[p, q] for p, q in _default_pair_indices(self.norb)],
+            dtype=np.float64,
+        )
+        full_cubic = np.concatenate(
+            [
+                _values_from_ordered_matrix(tau, _default_tau_indices(self.norb)),
+                omega,
+            ]
+        )
+        reduced_pair_values, reduced_cubic_values, cubic_onebody_phase = (
+            self.cubic_reduction.reduce_full(full_pair_values, full_cubic)
+        )
 
         phase_vec = (
             _restricted_left_phase_vector(d.full_double(), self.nocc)
@@ -928,31 +924,45 @@ class IGCR3SpinRestrictedParameterization:
         out[idx : idx + n] = left_params
         idx += n
 
+        pair_reduced_matrix = _symmetric_matrix_from_values(
+            reduced_pair_values, self.norb, _default_pair_indices(self.norb)
+        )
         n = self.n_pair_params
         out[idx : idx + n] = np.asarray(
-            [pair_eff[p, q] for p, q in self.pair_indices], dtype=np.float64
+            [pair_reduced_matrix[p, q] for p, q in self.pair_indices], dtype=np.float64
         )
         idx += n
 
         if self.uses_reduced_cubic_chart:
-            out[
-                self.n_left_orbital_rotation_params : self.n_left_orbital_rotation_params
-                + self.n_pair_params
-            ] = reduced_pair_values
             n = self.n_tau_params
             out[idx : idx + n] = reduced_cubic_values
             idx += n
         else:
+            full_cubic_adjusted = self.cubic_reduction.full_from_reduced(
+                reduced_cubic_values
+            )
+            n_tau_full = len(_default_tau_indices(self.norb))
+            tau_adjusted = _ordered_matrix_from_values(
+                full_cubic_adjusted[:n_tau_full],
+                self.norb,
+                _default_tau_indices(self.norb),
+            )
+            omega_adjusted = {
+                triple: val
+                for triple, val in zip(
+                    _default_triple_indices(self.norb),
+                    full_cubic_adjusted[n_tau_full:],
+                )
+            }
             n = self.n_tau_params
-            out[idx : idx + n] = _values_from_ordered_matrix(tau, self.tau_indices)
+            out[idx : idx + n] = _values_from_ordered_matrix(
+                tau_adjusted, self.tau_indices
+            )
             idx += n
 
             n = self.n_omega_params
-            full_omega = {
-                triple: value for value, triple in zip(omega, d.omega_indices)
-            }
             out[idx : idx + n] = np.asarray(
-                [full_omega[t] for t in self.omega_indices], dtype=np.float64
+                [omega_adjusted[t] for t in self.omega_indices], dtype=np.float64
             )
             idx += n
 

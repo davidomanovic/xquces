@@ -25,7 +25,6 @@ from xquces.optimize.subspace_linear_method import (
     gradient_coordinate_subspace,
     minimize_subspace_linear_method,
 )
-from xquces.optimize.trust_region import minimize_tangent_trust_region
 
 __all__ = [
     "build_dense_hamiltonian",

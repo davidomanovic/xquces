@@ -20,8 +20,30 @@ def build_diatom(atom1: str, atom2: str, R: float, basis: str, *, symmetry: bool
     )
     return mol
 
+def build_h4_rectangle(
+    x_length: float,
+    y_length: float,
+    basis: str,
+    *,
+    centered: bool = True,
+    symmetry: bool = False,
+):
+    x = float(x_length)
+    y = float(y_length)
 
-def build_hydrogen_ring(bond_length: float, n: int, basis: str, *, symmetry: bool):
+    coords = [
+        (0.0, 0.0, 0.0),
+        (x, 0.0, 0.0),
+        (0.0, y, 0.0),
+        (x, y, 0.0),
+    ]
+
+    if centered:
+        coords = [(cx - 0.5 * x, cy - 0.5 * y, cz) for cx, cy, cz in coords]
+
+    return _build_hydrogen_mol(coords, basis, symmetry=symmetry)
+
+def build_hydrogen_ring(bond_length: float, n: int, basis: str, *, symmetry: str = "D2h"):
     if n < 4 or n % 2:
         raise ValueError("n must be an even integer >= 4")
 
@@ -46,6 +68,53 @@ def build_hydrogen_ring(bond_length: float, n: int, basis: str, *, symmetry: boo
         verbose=0,
     )
 
+def _build_hydrogen_mol(
+    coords: list[tuple[float, float, float]],
+    basis: str,
+    *,
+    symmetry: bool = False,
+):
+    if len(coords) % 2:
+        raise ValueError("number of hydrogens must be even for spin=0")
+
+    atoms = [("H", tuple(map(float, xyz))) for xyz in coords]
+
+    return pyscf.gto.M(
+        atom=atoms,
+        basis=basis,
+        spin=0,
+        charge=0,
+        symmetry=symmetry,
+        verbose=0,
+    )
+
+
+def build_hydrogen_ladder(
+    bond_length: float,
+    nx: int,
+    basis: str,
+    *,
+    ny: int = 2,
+    centered: bool = True,
+    symmetry: bool = False,
+):
+    if nx < 2:
+        raise ValueError("nx must be >= 2")
+    if ny < 2:
+        raise ValueError("ny must be >= 2")
+    if nx * ny % 2:
+        raise ValueError("nx * ny must be even for spin=0")
+
+    r = float(bond_length)
+
+    coords = [(i * r, j * r, 0.0) for j in range(ny) for i in range(nx)]
+
+    if centered:
+        shift_x = 0.5 * (nx - 1) * r
+        shift_y = 0.5 * (ny - 1) * r
+        coords = [(x - shift_x, y - shift_y, z) for x, y, z in coords]
+
+    return _build_hydrogen_mol(coords, basis, symmetry=symmetry)
 
 def build_hydrogen_chain(
     R,
