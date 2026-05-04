@@ -32,6 +32,17 @@ from xquces.gcr.pair_uccd_reference import (
     GCR3ProductPairUCCDParameterization,
     GCR4ProductPairUCCDParameterization,
 )
+from xquces.gcr.pair_gcr2 import (
+    PairGCR2Ansatz,
+    PairGCR2Parameterization,
+    PairGCR2SpinRestrictedSpec,
+    embed_pair_register_jacobian,
+    embed_pair_register_state,
+    pair_gcr2_state,
+    pair_gcr2_state_jacobian,
+    pair_gcr2_state_vjp,
+    project_spin_orbital_vector_to_pair_register,
+)
 from xquces.gcr.restricted_jacobian import (
     make_restricted_gcr_jacobian,
     make_restricted_gcr_subspace_jacobian,
@@ -71,6 +82,11 @@ __all__ = [
     "IGCR4SpinRestrictedSpec",
     "IGCRSpinRestrictedParameterization",
     "IGCRVariationalCircuit",
+    "PairGCR2Ansatz",
+    "PairGCR2Parameterization",
+    "PairGCR2SpinRestrictedSpec",
+    "embed_pair_register_jacobian",
+    "embed_pair_register_state",
     "CompositeReferenceAnsatzParameterization",
     "FixedReferenceAnsatzParameterization",
     "apply_ansatz_parameterization",
@@ -84,5 +100,9 @@ __all__ = [
     "make_restricted_gcr_subspace_jacobian",
     "parameter_blocks",
     "parameters_from_t2",
+    "pair_gcr2_state",
+    "pair_gcr2_state_jacobian",
+    "pair_gcr2_state_vjp",
+    "project_spin_orbital_vector_to_pair_register",
     "random_parameters",
 ]

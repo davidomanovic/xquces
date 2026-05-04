@@ -7,7 +7,15 @@ from qiskit.transpiler.passes import Decompose
 
 
 def pre_init_passes() -> Iterator[BasePass]:
-    yield Decompose(["igcr2_jw", "igcr3_jw", "igcr4_jw", "product_pair_uccd_jw"])
+    yield Decompose(
+        [
+            "igcr2_jw",
+            "igcr3_jw",
+            "igcr4_jw",
+            "pair_gcr2_jw",
+            "product_pair_uccd_jw",
+        ]
+    )
     yield Decompose(["igcr4_diag4_restricted_jw"])
     yield Decompose(["igcr3_diag3_restricted_jw"])
     yield Decompose(

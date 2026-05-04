@@ -24,6 +24,11 @@ from xquces.qiskit.gates.orbital_rotations import (
     OrbitalRotationJW,
     OrbitalRotationSpinlessJW,
 )
+from xquces.qiskit.gates.pair_gcr2 import (
+    PairGCR2JW,
+    pair_gcr2_stateprep_jw_circuit,
+    product_pair_uccd_pair_gcr2_stateprep_jw_circuit,
+)
 from xquces.qiskit.gates.product_pair_uccd import (
     PairRegisterUCCDGivensJW,
     PairUCCDRotationJW,
@@ -45,6 +50,7 @@ __all__ = [
     "IGCR4JW",
     "OrbitalRotationJW",
     "OrbitalRotationSpinlessJW",
+    "PairGCR2JW",
     "PairRegisterUCCDGivensJW",
     "PairUCCDRotationJW",
     "ProductPairUCCDJW",
@@ -57,8 +63,10 @@ __all__ = [
     "igcr4_stateprep_jw_circuit",
     "product_pair_uccd_igcr_stateprep_jw_circuit",
     "product_pair_uccd_jw_circuit",
+    "product_pair_uccd_pair_gcr2_stateprep_jw_circuit",
     "product_pair_uccd_pair_register_stateprep_jw_circuit",
     "product_pair_uccd_stateprep_jw_circuit",
+    "pair_gcr2_stateprep_jw_circuit",
     "spin_balanced_circuit_gauge",
     "spin_balanced_rzz_circuit_gauge",
 ]
