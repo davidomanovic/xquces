@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from functools import cache
 
 import numpy as np
 from pyscf.fci import cistring
@@ -12,6 +13,15 @@ def occ_rows(norb: int, nocc: int) -> np.ndarray:
     if nocc == 0:
         return np.zeros((1, 0), dtype=np.uintp)
     return np.asarray(cistring.gen_occslst(range(norb), nocc), dtype=np.uintp)
+
+
+@cache
+def occ_indicator_rows(norb: int, nocc: int) -> np.ndarray:
+    occ = occ_rows(norb, nocc)
+    out = np.zeros((len(occ), norb), dtype=np.uint8)
+    if occ.size:
+        out[np.arange(len(occ))[:, None], occ] = 1
+    return out
 
 
 def sector_dim(norb: int, nocc: int) -> int:

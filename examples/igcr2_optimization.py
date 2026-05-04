@@ -12,27 +12,29 @@ from pyscf import lib
 from scipy.sparse.linalg import LinearOperator
 from ffsim.optimize import minimize_linear_method
 
-from xquces.gcr import GCRSpinBalancedParameterization
+from xquces.gcr.igcr import IGCR2SpinBalancedParameterization
 from xquces.hamiltonians import MolecularHamiltonianLinearOperator
 from xquces.states import hartree_fock_state
 from xquces.ucj.init import UCJBalancedDFSeed
 
-start, stop, step = 1.2, 1.2, 0.1
+start, stop, step = 0.9, 3.5, 0.1
 bond_distance_range = np.linspace(start, stop, num=round((stop - start) / step) + 1)
 n_f = 2
 molecule = "N2"
 basis = "sto-6g"
 
-OUT_CSV = Path(f"output/{molecule}_{basis}_gcr_sr.csv")
-TRACE_CSV = Path(f"output/{molecule}_{basis}_gcr_sr_trace.csv")
+OUT_CSV = Path(f"output/{molecule}_{basis}_igcr2_sb.csv")
+TRACE_CSV = Path(f"output/{molecule}_{basis}_igcr2_sb_trace.csv")
 
 pyscf.lib.num_threads(48)
+
 
 def phase_aligned_diff(psi, phi):
     overlap = np.vdot(phi, psi)
     if abs(overlap) < 1e-14:
         return np.linalg.norm(psi - phi)
     return np.linalg.norm(psi - overlap / abs(overlap) * phi)
+
 
 def append_row_csv(path, row_dict, header):
     new_file = not path.exists()
@@ -74,8 +76,8 @@ def main():
         "E_FCI",
         "E_HF",
         "E_CCSD",
-        "E_GCR_seed",
-        "E_GCR_opt",
+        "E_iGCR2_seed",
+        "E_iGCR2_opt",
     ]
     trace_header = [
         "R",
@@ -88,6 +90,9 @@ def main():
     print(",".join(header), flush=True)
 
     x_prev1 = None
+    prev_mol = None
+    prev_active_mo_coeff = None
+    prev_igcr2_param = None
     prev_ccsd_t1 = None
     prev_ccsd_t2 = None
 
@@ -112,6 +117,10 @@ def main():
 
         cas = pyscf.mcscf.RCASCI(scf, ncas=norb, nelecas=nelec)
         mo_coeff = cas.sort_mo(active_space, base=0)
+        active_mo_coeff = np.asarray(
+            mo_coeff[:, cas.ncore : cas.ncore + norb],
+            dtype=np.complex128,
+        )
 
         cisd = pyscf.ci.RCISD(
             scf, frozen=[i for i in range(mol.nao_nr()) if i not in active_space]
@@ -131,7 +140,9 @@ def main():
         cas.fix_spin_(ss=0)
         cas.kernel(mo_coeff=mo_coeff)
 
-        ham_xq = MolecularHamiltonianLinearOperator.from_scf(scf, active_space=active_space)
+        ham_xq = MolecularHamiltonianLinearOperator.from_scf(
+            scf, active_space=active_space
+        )
         H = linear_operator_from_xquces_hamiltonian(ham_xq)
         Phi0 = hartree_fock_state(norb, nelec)
 
@@ -141,40 +152,44 @@ def main():
             n_reps=1,
         ).build_ansatz()
 
-        gcr_param = GCRSpinBalancedParameterization(
+        igcr2_param = IGCR2SpinBalancedParameterization(
             norb=norb,
             nocc=n_alpha,
         )
 
-        x0 = gcr_param.parameters_from_ucj_ansatz(ucj_seed)
-        gcr_seed = gcr_param.ansatz_from_parameters(x0)
+        x0_seed = igcr2_param.parameters_from_ucj_ansatz(ucj_seed)
 
-        phi0 = hartree_fock_state(norb, nelec)
-
-        ucj_seed_ansatz = UCJBalancedDFSeed(
-            t2=ccsd.t2,
-            t1=ccsd.t1,
-            n_reps=1,
-        ).build_ansatz()
-
-        gcr_param = GCRSpinBalancedParameterization(
-            norb=norb, nocc=n_alpha
-        )
-
-        x0_seed = gcr_param.parameters_from_ucj_ansatz(ucj_seed_ansatz)
-        
-        if x_prev1 is not None and x_prev1.shape == x0_seed.shape:
-            x0 = x_prev1
+        if (
+            x_prev1 is not None
+            and prev_mol is not None
+            and prev_active_mo_coeff is not None
+            and prev_igcr2_param is not None
+            and x_prev1.shape == x0_seed.shape
+        ):
+            ao_overlap = pyscf.gto.intor_cross("int1e_ovlp", prev_mol, mol)
+            orbital_overlap = (
+                prev_active_mo_coeff.conj().T @ ao_overlap @ active_mo_coeff
+            )
+            x0 = igcr2_param.transfer_parameters_from(
+                x_prev1,
+                previous_parameterization=prev_igcr2_param,
+                orbital_overlap=orbital_overlap,
+                block_diagonal=True,
+            )
         else:
             x0 = x0_seed
 
-        print("params:", len(x0), flush=True)
+        # print("params:", len(x0), flush=True)
 
-        psi_seed = gcr_param.ansatz_from_parameters(x0_seed).apply(Phi0, nelec=nelec, copy=True)
-        E_GCR_seed = ham_xq.expectation(psi_seed)
+        psi_seed = igcr2_param.ansatz_from_parameters(x0_seed).apply(
+            Phi0, nelec=nelec, copy=True
+        )
+        E_iGCR2_seed = ham_xq.expectation(psi_seed)
 
         def params_to_vec(x):
-            return gcr_param.ansatz_from_parameters(x).apply(Phi0, nelec=nelec, copy=True)
+            return igcr2_param.ansatz_from_parameters(x).apply(
+                Phi0, nelec=nelec, copy=True
+            )
 
         it_counter = {"k": 0}
 
@@ -182,12 +197,18 @@ def main():
             it_counter["k"] += 1
             energy = float(intermediate_result.fun)
 
-            if hasattr(intermediate_result, "jac") and intermediate_result.jac is not None:
+            if (
+                hasattr(intermediate_result, "jac")
+                and intermediate_result.jac is not None
+            ):
                 gmax = float(np.max(np.abs(intermediate_result.jac)))
             else:
                 gmax = float("nan")
 
-            if hasattr(intermediate_result, "overlap_mat") and intermediate_result.overlap_mat is not None:
+            if (
+                hasattr(intermediate_result, "overlap_mat")
+                and intermediate_result.overlap_mat is not None
+            ):
                 try:
                     cond = float(np.linalg.cond(intermediate_result.overlap_mat))
                 except np.linalg.LinAlgError:
@@ -211,14 +232,17 @@ def main():
             params_to_vec,
             H,
             x0=x0,
-            maxiter=300,
+            maxiter=100,
             gtol=1e-6,
             ftol=1e-12,
             callback=callback,
         )
 
         x_prev1 = result.x.copy()
-        E_GCR_opt = float(result.fun)
+        prev_mol = mol
+        prev_active_mo_coeff = active_mo_coeff.copy()
+        prev_igcr2_param = igcr2_param
+        E_iGCR2_opt = float(result.fun)
 
         E_HF = scf.e_tot
         E_FCI = cas.e_tot
@@ -228,8 +252,8 @@ def main():
             "E_FCI": f"{E_FCI:.12f}",
             "E_HF": f"{E_HF:.12f}",
             "E_CCSD": f"{ccsd.e_tot:.12f}",
-            "E_GCR_seed": f"{E_GCR_seed:.12f}",
-            "E_GCR_opt": f"{E_GCR_opt:.12f}",
+            "E_iGCR2_seed": f"{E_iGCR2_seed:.12f}",
+            "E_iGCR2_opt": f"{E_iGCR2_opt:.12f}",
         }
         print(",".join([row[k] for k in header]), flush=True)
         append_row_csv(OUT_CSV, row, header)

@@ -90,8 +90,6 @@ class UCJAnsatz:
         for layer in self.layers:
             if layer.norb != norb:
                 raise ValueError("all layers must have the same norb")
-            if type(layer.diagonal) is not layer_type:
-                raise ValueError("all layers must use the same diagonal spec type")
         if self.final_orbital_rotation is not None:
             u = np.asarray(self.final_orbital_rotation, dtype=np.complex128)
             if u.shape != (norb, norb):
@@ -116,7 +114,9 @@ class UCJAnsatz:
     def is_spin_balanced(self) -> bool:
         return isinstance(self.layers[0].diagonal, SpinBalancedSpec)
 
-    def apply(self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True) -> np.ndarray:
+    def apply(
+        self, vec: np.ndarray, nelec: tuple[int, int], copy: bool = True
+    ) -> np.ndarray:
         out = np.array(vec, dtype=np.complex128, copy=copy)
         for layer in self.layers:
             d = layer.diagonal
