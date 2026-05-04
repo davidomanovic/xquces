@@ -6,6 +6,7 @@ import pyscf.cc
 import pyscf.gto
 import pyscf.mcscf
 import pyscf.scf
+import scipy.optimize
 from pyscf.fci.spin_op import contract_ss
 
 def build_diatom(atom1: str, atom2: str, R: float, basis: str, *, symmetry: bool | str = "Dooh"):
@@ -271,6 +272,36 @@ def orbital_overlap_between(
 ) -> np.ndarray:
     ao_overlap = pyscf.gto.intor_cross("int1e_ovlp", prev_mol, mol)
     return np.asarray(prev_mo, dtype=np.complex128).conj().T @ ao_overlap @ mo
+
+
+def continue_mo_coeff_by_overlap(prev_mol, prev_mo, mol, mo, *, return_info=False):
+    prev_mo = np.asarray(prev_mo, dtype=np.complex128)
+    mo = np.asarray(mo, dtype=np.complex128)
+    if prev_mo.ndim != 2 or mo.ndim != 2:
+        raise ValueError("MO coefficient arrays must be matrices")
+    if prev_mo.shape[1] != mo.shape[1]:
+        raise ValueError("previous and current MO bases must have the same size")
+
+    overlap = orbital_overlap_between(prev_mol, prev_mo, mol, mo)
+    rows, cols = scipy.optimize.linear_sum_assignment(-np.abs(overlap))
+    order = np.empty(prev_mo.shape[1], dtype=np.int64)
+    order[rows] = cols
+
+    selected = overlap[np.arange(prev_mo.shape[1]), order]
+    phase = np.ones(prev_mo.shape[1], dtype=np.complex128)
+    good = np.abs(selected) > 1e-14
+    phase[good] = np.conj(selected[good] / np.abs(selected[good]))
+
+    continued = mo[:, order] * phase[np.newaxis, :]
+    continued = np.real_if_close(continued, tol=1000)
+
+    if not return_info:
+        return continued
+    return continued, {
+        "order": order,
+        "selected_overlap": selected,
+        "min_overlap": float(np.min(np.abs(selected))),
+    }
 
 
 def active_hamiltonian_from_casscf(mc):
