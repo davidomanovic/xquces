@@ -7,53 +7,53 @@ from typing import Callable
 import numpy as np
 from scipy.optimize import minimize
 
-from xquces.gcr.igcr2 import (
-    IGCR2Ansatz,
+from xquces.gcr.charts import (
+    GCR2FullUnitaryChart,
     IGCR2LeftUnitaryChart,
     IGCR2RealReferenceOVUnitaryChart,
     IGCR2ReferenceOVUnitaryChart,
+)
+from xquces.gcr.igcr import (
+    IGCR2Ansatz,
     IGCR2SpinRestrictedParameterization,
+    IGCR3Ansatz,
+    IGCR3SpinRestrictedParameterization,
+    IGCR3SpinRestrictedSpec,
+    IGCR4Ansatz,
+    IGCR4SpinRestrictedParameterization,
+    IGCR4SpinRestrictedSpec,
+    reduce_spin_restricted,
+    relabel_igcr2_ansatz_orbitals,
+    relabel_igcr3_ansatz_orbitals,
+    relabel_igcr4_ansatz_orbitals,
+)
+from xquces.gcr.model import gcr_from_ucj_ansatz
+from xquces.gcr.utils import (
+    _default_eta_indices,
+    _default_pair_indices,
+    _default_rho_indices,
+    _default_sigma_indices,
+    _default_tau_indices,
+    _default_triple_indices,
     _diag_unitary,
     _final_unitary_from_left_and_right,
     _orbital_relabeling_unitary,
     _parameters_from_zero_diag_antihermitian,
     _restricted_irreducible_pair_matrix,
     _restricted_left_phase_vector,
+    _values_from_ordered_matrix,
     _zero_diag_antihermitian_from_parameters,
     orbital_relabeling_from_overlap,
-    reduce_spin_restricted,
-    relabel_igcr2_ansatz_orbitals,
 )
-from xquces.gcr.igcr3 import (
-    IGCR3Ansatz,
-    IGCR3SpinRestrictedParameterization,
-    IGCR3SpinRestrictedSpec,
-    _default_pair_indices,
-    _default_tau_indices,
-    _default_triple_indices,
-    _values_from_ordered_matrix,
-    relabel_igcr3_ansatz_orbitals,
-)
-from xquces.gcr.igcr4 import (
-    IGCR4Ansatz,
-    IGCR4SpinRestrictedParameterization,
-    IGCR4SpinRestrictedSpec,
-    _default_eta_indices,
-    _default_rho_indices,
-    _default_sigma_indices,
-    relabel_igcr4_ansatz_orbitals,
-)
-from xquces.gcr.model import gcr_from_ucj_ansatz
-from xquces.pair_uccd import (
+from xquces.gcr.product_pair_uccd import (
     PairUCCDStateParameterization,
     ProductPairUCCDStateParameterization,
 )
 from xquces.ucj.model import UCJAnsatz
-from xquces.gcr.bridge_gcr2 import GCR2FullUnitaryChart
 
 
 def _make_composite(reference_parameterization, ansatz_parameterization, nelec):
-    from xquces.state_parameterization import CompositeReferenceAnsatzParameterization
+    from xquces.gcr.references import CompositeReferenceAnsatzParameterization
 
     return CompositeReferenceAnsatzParameterization(
         reference_parameterization,
@@ -63,13 +63,13 @@ def _make_composite(reference_parameterization, ansatz_parameterization, nelec):
 
 
 def _make_composite_jacobian(composite):
-    from xquces.state_parameterization import make_composite_reference_ansatz_jacobian
+    from xquces.gcr.references import make_composite_reference_ansatz_jacobian
 
     return make_composite_reference_ansatz_jacobian(composite)
 
 
 def _make_composite_subspace_jacobian(composite):
-    from xquces.state_parameterization import (
+    from xquces.gcr.references import (
         make_composite_reference_ansatz_subspace_jacobian,
     )
 
@@ -79,7 +79,7 @@ def _make_composite_subspace_jacobian(composite):
 def _energy_gradient_from_composite(
     composite, params: np.ndarray, H
 ) -> tuple[float, np.ndarray]:
-    from xquces.state_parameterization import make_composite_reference_ansatz_vjp
+    from xquces.gcr.references import make_composite_reference_ansatz_vjp
 
     psi = composite.state_from_parameters(params)
     Hpsi = H @ psi
@@ -1794,11 +1794,6 @@ def _normalize_pair_uccd_reference_kind(reference_kind: str) -> str:
 @dataclass(frozen=True)
 class GCRPairUCCDParameterization:
     """Order/reference-kind facade for iGCR on a pair-UCCD reference.
-
-    This is the new construction path. The older
-    GCR{2,3,4}{Product}PairUCCDParameterization classes remain as compatibility
-    names, but new code can select the iGCR order and pair-UCCD reference form
-    from one class.
     """
 
     norb: int

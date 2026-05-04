@@ -13,7 +13,17 @@ from qiskit.circuit import (
     Qubit,
 )
 
-from xquces.gcr.igcr2 import IGCR2Ansatz, IGCR2SpinBalancedSpec, IGCR2SpinRestrictedSpec
+from xquces.gcr.igcr import (
+    IGCR2Ansatz,
+    IGCR2SpinBalancedSpec,
+    IGCR2SpinRestrictedSpec,
+)
+from xquces.gcr.utils import (
+    _balanced_irreducible_pair_matrices,
+    _balanced_left_phase_vector,
+    _default_pair_indices,
+    _diag_unitary,
+)
 from xquces.qiskit.gates.diag_2 import (
     Diag2SpinBalancedJW,
     Diag2SpinRestrictedJW,
@@ -22,46 +32,14 @@ from xquces.qiskit.gates.diag_2 import (
 from xquces.qiskit.gates.orbital_rotations import OrbitalRotationJW
 
 
-def _diag_unitary(phases: np.ndarray) -> np.ndarray:
-    return np.diag(np.exp(1j * np.asarray(phases, dtype=np.float64)))
-
-
 def _iter_upper_pairs(norb: int) -> list[tuple[int, int]]:
-    return [(p, q) for p in range(norb) for q in range(p + 1, norb)]
+    return _default_pair_indices(norb)
 
 
 def _zero_small_values(values: np.ndarray, atol: float) -> np.ndarray:
     out = np.array(values, copy=True)
     out[np.abs(out) <= atol] = 0.0
     return out
-
-
-def _balanced_irreducible_pair_matrices(
-    same_spin_params: np.ndarray,
-    mixed_spin_params: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    same = np.asarray(same_spin_params, dtype=np.float64)
-    mixed = np.asarray(mixed_spin_params, dtype=np.float64)
-    mixed_diag = np.diag(mixed)
-    shift = 0.5 * (mixed_diag[:, None] + mixed_diag[None, :])
-    same_red = np.array(same, copy=True)
-    mixed_red = np.array(mixed, copy=True)
-    mask = ~np.eye(same.shape[0], dtype=bool)
-    same_red[mask] -= shift[mask]
-    mixed_red[mask] -= shift[mask]
-    np.fill_diagonal(same_red, 0.0)
-    np.fill_diagonal(mixed_red, 0.0)
-    return same_red, mixed_red
-
-
-def _balanced_left_phase_vector(
-    same_spin_params: np.ndarray,
-    mixed_spin_params: np.ndarray,
-    nocc: int,
-) -> np.ndarray:
-    same_diag = np.diag(np.asarray(same_spin_params, dtype=np.float64))
-    mixed_diag = np.diag(np.asarray(mixed_spin_params, dtype=np.float64))
-    return 0.5 * same_diag + 0.5 * (2 * int(nocc) - 1) * mixed_diag
 
 
 def _additive_pair_sparsifying_shift(

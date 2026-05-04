@@ -19,7 +19,7 @@ from qiskit.quantum_info import Statevector
 
 from xquces.basis import occ_rows, reshape_state
 from xquces.hamiltonians import MolecularHamiltonianLinearOperator
-from xquces.gcr.igcr2 import IGCR2SpinBalancedParameterization
+from xquces.gcr.igcr import IGCR2SpinBalancedParameterization
 from xquces.qiskit.gates.diag_2 import Diag2SpinBalancedJW
 from xquces.qiskit.gates.igcr2 import spin_balanced_rzz_circuit_gauge
 from xquces.qiskit.gates.orbital_rotations import OrbitalRotationJW

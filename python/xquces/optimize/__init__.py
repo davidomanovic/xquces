@@ -2,12 +2,6 @@ from xquces.optimize.dense_hamiltonian import (
     build_dense_hamiltonian,
     make_dense_hamiltonian,
 )
-from xquces.optimize.diagnostics import (
-    TangentResidualProjection,
-    energy_and_residual,
-    sector_residual_projections,
-    tangent_residual_projection,
-)
 from xquces.optimize.linear_method import minimize_linear_method
 from xquces.optimize.metric_bfgs import (
     make_expectation_penalty_state_objective,

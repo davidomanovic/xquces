@@ -12,7 +12,7 @@ from pyscf import lib
 from scipy.sparse.linalg import LinearOperator
 from ffsim.optimize import minimize_linear_method
 
-from xquces.gcr.igcr2 import IGCR2SpinBalancedParameterization
+from xquces.gcr.igcr import IGCR2SpinBalancedParameterization
 from xquces.hamiltonians import MolecularHamiltonianLinearOperator
 from xquces.states import hartree_fock_state
 from xquces.ucj.init import UCJBalancedDFSeed

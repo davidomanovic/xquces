@@ -5,48 +5,11 @@ from typing import Callable
 
 import numpy as np
 
-from xquces.gcr.restricted_jacobian_ext import (
+from xquces.gcr.restricted_jacobian import (
     make_restricted_gcr_jacobian,
     make_restricted_gcr_subspace_jacobian,
 )
-from xquces.states import (
-    doci_dimension,
-    doci_params_from_state,
-    doci_state,
-    doci_state_jacobian,
-    hartree_fock_state,
-)
-
-
-@dataclass(frozen=True)
-class DOCIStateParameterization:
-    norb: int
-    nelec: tuple[int, int]
-
-    @property
-    def n_params(self) -> int:
-        return doci_dimension(self.norb, self.nelec) - 1
-
-    def state_from_parameters(self, params: np.ndarray) -> np.ndarray:
-        params = np.asarray(params, dtype=np.float64)
-        if params.shape != (self.n_params,):
-            raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
-        return doci_state(self.norb, self.nelec, params=params)
-
-    def state_jacobian_from_parameters(self, params: np.ndarray) -> np.ndarray:
-        params = np.asarray(params, dtype=np.float64)
-        if params.shape != (self.n_params,):
-            raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
-        return doci_state_jacobian(self.norb, self.nelec, params)
-
-    def parameters_from_state(self, state: np.ndarray) -> np.ndarray:
-        return doci_params_from_state(state, self.norb, self.nelec)
-
-    def params_to_state(self) -> Callable[[np.ndarray], np.ndarray]:
-        def func(params: np.ndarray) -> np.ndarray:
-            return self.state_from_parameters(params)
-
-        return func
+from xquces.states import hartree_fock_state
 
 
 @dataclass(frozen=True)

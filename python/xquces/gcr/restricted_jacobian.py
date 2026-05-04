@@ -7,27 +7,24 @@ from typing import Callable
 import numpy as np
 
 from xquces.basis import occ_rows, reshape_state
-from xquces.gcr.igcr2 import (
+from xquces.gcr.charts import (
+    GCR2FullUnitaryChart,
     IGCR2BlockDiagLeftUnitaryChart,
     IGCR2LeftUnitaryChart,
     IGCR2RealReferenceOVUnitaryChart,
     IGCR2ReferenceOVUnitaryChart,
+)
+from xquces.gcr.igcr import (
     IGCR2SpinRestrictedParameterization,
-)
-from xquces.gcr.bridge_gcr2 import GCR2FullUnitaryChart
-from xquces.gcr.igcr3 import (
     IGCR3SpinRestrictedParameterization,
-    _default_tau_indices,
-    _default_triple_indices,
-)
-from xquces.gcr.igcr4 import (
     IGCR4SpinRestrictedParameterization,
+)
+from xquces.gcr.utils import (
     _default_eta_indices,
     _default_rho_indices,
     _default_sigma_indices,
-)
-from xquces.gcr.spin_balanced_igcr4 import (
-    IGCR4SpinBalancedFixedSectorParameterization,
+    _default_tau_indices,
+    _default_triple_indices,
 )
 from xquces.orbitals import ov_generator_from_params
 
@@ -382,12 +379,6 @@ def _diag_feature_matrix(
         return _igcr3_feature_matrix(parameterization, nelec)
     if isinstance(parameterization, IGCR4SpinRestrictedParameterization):
         return _igcr4_feature_matrix(parameterization, nelec)
-    if isinstance(parameterization, IGCR4SpinBalancedFixedSectorParameterization):
-        if tuple(nelec) != tuple(parameterization.nelec):
-            raise ValueError(
-                "spin-balanced fixed-sector parameterization got wrong nelec"
-            )
-        return parameterization.diagonal_basis.features
     raise TypeError(type(parameterization).__name__)
 
 
@@ -407,7 +398,6 @@ def make_restricted_gcr_jacobian(
         IGCR2SpinRestrictedParameterization
         | IGCR3SpinRestrictedParameterization
         | IGCR4SpinRestrictedParameterization
-        | IGCR4SpinBalancedFixedSectorParameterization
     ),
     reference_vec: np.ndarray,
     nelec: tuple[int, int],
@@ -525,7 +515,6 @@ def make_restricted_gcr_subspace_jacobian(
         IGCR2SpinRestrictedParameterization
         | IGCR3SpinRestrictedParameterization
         | IGCR4SpinRestrictedParameterization
-        | IGCR4SpinBalancedFixedSectorParameterization
     ),
     reference_vec: np.ndarray,
     nelec: tuple[int, int],
@@ -672,3 +661,9 @@ def _batch_right_transpose_multiply(batch: np.ndarray, mat: np.ndarray) -> np.nd
     if batch.shape[0] == 0:
         return np.zeros((0,) + mat.shape, dtype=np.complex128)
     return np.einsum("an,jbn->jab", mat, batch, optimize=True)
+
+
+__all__ = [
+    "make_restricted_gcr_jacobian",
+    "make_restricted_gcr_subspace_jacobian",
+]

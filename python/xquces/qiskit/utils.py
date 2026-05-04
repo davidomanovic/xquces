@@ -117,9 +117,6 @@ def pretty_print_circuit_stats(
     file: TextIO | None = None,
 ) -> list[CircuitStats]:
     """Transpile circuits to native gates and print readable statistics.
-
-    Returns the collected statistics so callers can also assert on them in
-    tests or notebooks.
     """
     out = sys.stdout if file is None else file
     if title:

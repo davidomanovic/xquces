@@ -289,7 +289,6 @@ def active_hamiltonian_from_casscf(mc):
 def apply_spin_square(
     fcivec: np.ndarray, norb: int, nelec: tuple[int, int]
 ) -> np.ndarray:
-    """Apply the spin-squared operator in the fixed ``(n_alpha, n_beta)`` sector."""
     if np.iscomplexobj(fcivec):
         ci1 = contract_ss(fcivec.real, norb, nelec).astype(complex)
         ci1 += 1j * contract_ss(fcivec.imag, norb, nelec)

@@ -12,29 +12,29 @@ from qiskit.circuit import (
     Qubit,
 )
 
-from xquces.gcr.igcr import IGCR3Ansatz
-from xquces.qiskit.gates.diag_3 import Diag3SpinRestrictedJW
+from xquces.gcr.igcr import IGCR4Ansatz
+from xquces.qiskit.gates.diag_4 import Diag4SpinRestrictedJW
 from xquces.qiskit.gates.orbital_rotations import OrbitalRotationJW
 
 
-class IGCR3JW(Gate):
-    """Full spin-restricted iGCR-3 ansatz gate under Jordan-Wigner."""
+class IGCR4JW(Gate):
+    """Full spin-restricted iGCR-4 ansatz gate under Jordan-Wigner."""
 
     def __init__(
         self,
-        ansatz: IGCR3Ansatz,
+        ansatz: IGCR4Ansatz,
         *,
         label: str | None = None,
         validate_orbital_rotations: bool = True,
     ):
         self.ansatz = ansatz
         self.validate_orbital_rotations = bool(validate_orbital_rotations)
-        super().__init__("igcr3_jw", 2 * ansatz.norb, [], label=label)
+        super().__init__("igcr4_jw", 2 * ansatz.norb, [], label=label)
 
     def _define(self) -> None:
         qubits = QuantumRegister(self.num_qubits)
         self.definition = QuantumCircuit.from_instructions(
-            _igcr3_jw(
+            _igcr4_jw(
                 qubits,
                 self.ansatz,
                 validate_orbital_rotations=self.validate_orbital_rotations,
@@ -44,14 +44,14 @@ class IGCR3JW(Gate):
         )
 
 
-def igcr3_jw_circuit(
-    ansatz: IGCR3Ansatz,
+def igcr4_jw_circuit(
+    ansatz: IGCR4Ansatz,
     *,
     validate_orbital_rotations: bool = True,
 ) -> QuantumCircuit:
     circuit = QuantumCircuit(2 * ansatz.norb)
     circuit.append(
-        IGCR3JW(
+        IGCR4JW(
             ansatz,
             validate_orbital_rotations=validate_orbital_rotations,
         ),
@@ -60,13 +60,13 @@ def igcr3_jw_circuit(
     return circuit
 
 
-def igcr3_stateprep_jw_circuit(
-    ansatz: IGCR3Ansatz,
+def igcr4_stateprep_jw_circuit(
+    ansatz: IGCR4Ansatz,
     *,
     validate_orbital_rotations: bool = True,
 ) -> QuantumCircuit:
     circuit = QuantumCircuit(2 * ansatz.norb)
-    for instruction in _igcr3_stateprep_jw(
+    for instruction in _igcr4_stateprep_jw(
         circuit.qubits,
         ansatz,
         validate_orbital_rotations=validate_orbital_rotations,
@@ -75,9 +75,9 @@ def igcr3_stateprep_jw_circuit(
     return circuit
 
 
-def _igcr3_jw(
+def _igcr4_jw(
     qubits: Sequence[Qubit],
-    ansatz: IGCR3Ansatz,
+    ansatz: IGCR4Ansatz,
     *,
     validate_orbital_rotations: bool,
 ) -> Iterator[CircuitInstruction]:
@@ -94,12 +94,15 @@ def _igcr3_jw(
         qubits,
     )
     yield CircuitInstruction(
-        Diag3SpinRestrictedJW(
+        Diag4SpinRestrictedJW(
             ansatz.norb,
             d.full_double(),
             d.pair_matrix(),
             d.tau_matrix(),
             d.omega_vector(),
+            d.eta_vector(),
+            d.rho_vector(),
+            d.sigma_vector(),
         ),
         qubits,
     )
@@ -113,9 +116,9 @@ def _igcr3_jw(
     )
 
 
-def _igcr3_stateprep_jw(
+def _igcr4_stateprep_jw(
     qubits: Sequence[Qubit],
-    ansatz: IGCR3Ansatz,
+    ansatz: IGCR4Ansatz,
     *,
     validate_orbital_rotations: bool,
 ) -> Iterator[CircuitInstruction]:
@@ -134,12 +137,15 @@ def _igcr3_stateprep_jw(
         qubits,
     )
     yield CircuitInstruction(
-        Diag3SpinRestrictedJW(
+        Diag4SpinRestrictedJW(
             ansatz.norb,
             d.full_double(),
             d.pair_matrix(),
             d.tau_matrix(),
             d.omega_vector(),
+            d.eta_vector(),
+            d.rho_vector(),
+            d.sigma_vector(),
         ),
         qubits,
     )
