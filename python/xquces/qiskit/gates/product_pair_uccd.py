@@ -13,7 +13,12 @@ from qiskit.circuit import (
 )
 from qiskit.circuit.library import CXGate, UnitaryGate, XGate, XXPlusYYGate
 
-from xquces.gcr.igcr import IGCR2Ansatz, IGCR3Ansatz, IGCR4Ansatz
+from xquces.gcr.igcr import (
+    IGCR2Ansatz,
+    IGCR2LayeredAnsatz,
+    IGCR3Ansatz,
+    IGCR4Ansatz,
+)
 from xquces.gcr.product_pair_uccd import _pair_uccd_ov_pairs
 from xquces.qiskit.gates.igcr2 import IGCR2JW
 from xquces.qiskit.gates.igcr3 import IGCR3JW
@@ -242,7 +247,7 @@ def product_pair_uccd_pair_register_stateprep_jw_circuit(
 
 
 def product_pair_uccd_igcr_stateprep_jw_circuit(
-    ansatz: IGCR2Ansatz | IGCR3Ansatz | IGCR4Ansatz,
+    ansatz: IGCR2Ansatz | IGCR2LayeredAnsatz | IGCR3Ansatz | IGCR4Ansatz,
     reference_params: np.ndarray,
     *,
     nelec: tuple[int, int] | Sequence[int] | None = None,
@@ -374,13 +379,13 @@ def _normalize_stateprep_strategy(strategy: str) -> str:
 
 
 def _igcr_gate_from_ansatz(
-    ansatz: IGCR2Ansatz | IGCR3Ansatz | IGCR4Ansatz,
+    ansatz: IGCR2Ansatz | IGCR2LayeredAnsatz | IGCR3Ansatz | IGCR4Ansatz,
     *,
     validate_orbital_rotations: bool,
     sparsify_diagonal: bool,
     sparsify_atol: float,
 ) -> Gate:
-    if isinstance(ansatz, IGCR2Ansatz):
+    if isinstance(ansatz, (IGCR2Ansatz, IGCR2LayeredAnsatz)):
         return IGCR2JW(
             ansatz,
             validate_orbital_rotations=validate_orbital_rotations,
@@ -397,4 +402,6 @@ def _igcr_gate_from_ansatz(
             ansatz,
             validate_orbital_rotations=validate_orbital_rotations,
         )
-    raise TypeError("ansatz must be an IGCR2Ansatz, IGCR3Ansatz, or IGCR4Ansatz")
+    raise TypeError(
+        "ansatz must be an IGCR2Ansatz, IGCR2LayeredAnsatz, IGCR3Ansatz, or IGCR4Ansatz"
+    )

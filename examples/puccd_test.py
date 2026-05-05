@@ -34,19 +34,24 @@ from xquces.qiskit.gates import (
     igcr2_stateprep_jw_circuit,
 )
 from xquces.qiskit.utils import DEFAULT_NATIVE_BASIS_GATES, DEFAULT_TRANSPILE_SEED
-from xquces.ucj.init import UCJRestrictedProjectedDFSeed
 
 
-N_REPS = 1
 HYDROGEN_R = 1.0
 N2_R = 1.1
 NATIVE_BASIS_GATES = ("cx", "rz", "sx", "x")
-METHODS = ("GCR2-HF", "GCR2-pUCCD pair") #, "GCR2-pUCCD spin")
+LAYERS = (1, 2)
+METHODS = (
+    "GCR2-L1-HF",
+    "GCR2-L2-HF",
+    "GCR2-L1-pUCCD",
+    "GCR2-L2-pUCCD",
+)
 METRICS = ("Parameters", "Depth", "Total", "Two-qubit")
 METHOD_COLORS = {
-    "GCR2-HF": "#1f77b4",
-    "GCR2-pUCCD pair": "#ff7f0e",
-    "GCR2-pUCCD spin": "#2ca02c",
+    "GCR2-L1-HF": "#1f77b4",
+    "GCR2-L2-HF": "#2ca02c",
+    "GCR2-L1-pUCCD": "#ff7f0e",
+    "GCR2-L2-pUCCD": "#d62728",
 }
 GATE_COLORS = {
     "cx": "#1f77b4",
@@ -223,81 +228,69 @@ def build_system_result(
         raise RuntimeError(f"RCCSD failed for {spec.label}")
 
     hamiltonian = sparse_pauli_hamiltonian(h1, eri, ecore, norb)
-    restricted_ucj = UCJRestrictedProjectedDFSeed(
-        t2=np.asarray(ccsd.t2, dtype=np.float64),
-        t1=np.asarray(ccsd.t1, dtype=np.complex128),
-        n_reps=N_REPS,
-    ).build_ansatz()
+    t2 = np.asarray(ccsd.t2, dtype=np.float64)
+    t1 = np.asarray(ccsd.t1, dtype=np.float64)
 
     results: dict[str, MethodResult] = {}
 
-    hf_param = IGCR2SpinRestrictedParameterization(norb=norb, nocc=n_alpha)
-    hf_params = hf_param.parameters_from_ucj_ansatz(restricted_ucj)
-    hf_circuit = igcr2_stateprep_jw_circuit(
-        hf_param.ansatz_from_parameters(hf_params),
-    )
-    hf_energy = circuit_energy(hf_circuit, hamiltonian)
-    results["GCR2-HF"] = MethodResult(
-        method="GCR2-HF",
-        n_params=hf_param.n_params,
-        stats=native_stats(
-            hf_circuit,
-            "GCR2-HF",
-            pre_init=XQUCES_PRE_INIT,
-            optimization_level=optimization_level,
-            basis_gates=basis_gates,
-            seed=seed,
-        ),
-        energy=hf_energy,
-        abs_error=abs(hf_energy - float(cas.e_tot)),
-    )
+    for layers in LAYERS:
+        hf_label = f"GCR2-L{layers}-HF"
+        hf_param = IGCR2SpinRestrictedParameterization(
+            norb=norb,
+            nocc=n_alpha,
+            layers=layers,
+        )
+        hf_params = hf_param.parameters_from_t_amplitudes(t2, t1=t1)
+        hf_circuit = igcr2_stateprep_jw_circuit(
+            hf_param.ansatz_from_parameters(hf_params),
+        )
+        hf_energy = circuit_energy(hf_circuit, hamiltonian)
+        results[hf_label] = MethodResult(
+            method=hf_label,
+            n_params=hf_param.n_params,
+            stats=native_stats(
+                hf_circuit,
+                hf_label,
+                pre_init=XQUCES_PRE_INIT,
+                optimization_level=optimization_level,
+                basis_gates=basis_gates,
+                seed=seed,
+            ),
+            energy=hf_energy,
+            abs_error=abs(hf_energy - float(cas.e_tot)),
+        )
 
-    puccd_param = GCR2ProductPairUCCDParameterization(norb=norb, nocc=n_alpha)
-    puccd_params = puccd_param.parameters_from_t2_and_ucj_ansatz(
-        np.asarray(ccsd.t2, dtype=np.float64),
-        restricted_ucj,
-        pair_scale=0.5,
-    )
-    puccd_pair_circuit = gcr_product_pair_uccd_stateprep_jw_circuit(
-        puccd_param,
-        puccd_params,
-        puccd_strategy="pair_register",
-    )
-    puccd_energy = circuit_energy(puccd_pair_circuit, hamiltonian)
-    results["GCR2-pUCCD pair"] = MethodResult(
-        method="GCR2-pUCCD pair",
-        n_params=puccd_param.n_params,
-        stats=native_stats(
-            puccd_pair_circuit,
-            "GCR2-pUCCD pair",
-            pre_init=XQUCES_PRE_INIT,
-            optimization_level=optimization_level,
-            basis_gates=basis_gates,
-            seed=seed,
-        ),
-        energy=puccd_energy,
-        abs_error=abs(puccd_energy - float(cas.e_tot)),
-    )
-
-    puccd_spin_circuit = gcr_product_pair_uccd_stateprep_jw_circuit(
-        puccd_param,
-        puccd_params,
-        puccd_strategy="spin_orbital",
-    )
-    results["GCR2-pUCCD spin"] = MethodResult(
-        method="GCR2-pUCCD spin",
-        n_params=puccd_param.n_params,
-        stats=native_stats(
-            puccd_spin_circuit,
-            "GCR2-pUCCD spin",
-            pre_init=XQUCES_PRE_INIT,
-            optimization_level=optimization_level,
-            basis_gates=basis_gates,
-            seed=seed,
-        ),
-        energy=puccd_energy,
-        abs_error=abs(puccd_energy - float(cas.e_tot)),
-    )
+        puccd_label = f"GCR2-L{layers}-pUCCD"
+        puccd_param = GCR2ProductPairUCCDParameterization(
+            norb=norb,
+            nocc=n_alpha,
+            layers=layers,
+        )
+        puccd_params = puccd_param.parameters_from_t_amplitudes(
+            t2,
+            t1=t1,
+            scale=0.5,
+        )
+        puccd_circuit = gcr_product_pair_uccd_stateprep_jw_circuit(
+            puccd_param,
+            puccd_params,
+            puccd_strategy="pair_register",
+        )
+        puccd_energy = circuit_energy(puccd_circuit, hamiltonian)
+        results[puccd_label] = MethodResult(
+            method=puccd_label,
+            n_params=puccd_param.n_params,
+            stats=native_stats(
+                puccd_circuit,
+                puccd_label,
+                pre_init=XQUCES_PRE_INIT,
+                optimization_level=optimization_level,
+                basis_gates=basis_gates,
+                seed=seed,
+            ),
+            energy=puccd_energy,
+            abs_error=abs(puccd_energy - float(cas.e_tot)),
+        )
 
     return SystemResult(
         spec=spec,
@@ -389,9 +382,10 @@ def plot_resource_summary(results: list[SystemResult], output: Path) -> None:
 def plot_depth_error(results: list[SystemResult], output: Path) -> None:
     fig, ax = plt.subplots(figsize=(7.2, 5.2), constrained_layout=True)
     markers = {
-        "GCR2-HF": "o",
-        "GCR2-pUCCD pair": "s",
-        "GCR2-pUCCD spin": "D",
+        "GCR2-L1-HF": "o",
+        "GCR2-L2-HF": "^",
+        "GCR2-L1-pUCCD": "s",
+        "GCR2-L2-pUCCD": "D",
     }
 
     for result in results:
@@ -480,8 +474,8 @@ def print_summary(results: list[SystemResult]) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Compare iGCR2-on-HF and iGCR2-on-product-pUCCD state-preparation "
-            "resources and initialized energies."
+            "Compare one- and two-layer iGCR2-on-HF and iGCR2-on-product-pUCCD "
+            "state-preparation resources and initialized energies."
         )
     )
     parser.add_argument(
