@@ -1,6 +1,7 @@
 from xquces.gcr.igcr import (
     GCRParameterBlock,
     IGCR2Ansatz,
+    IGCR2LayeredAnsatz,
     IGCR2SpinBalancedParameterization,
     IGCR2SpinBalancedSpec,
     IGCR2SpinRestrictedParameterization,
@@ -74,6 +75,7 @@ from xquces.gcr import (
     gcr_from_ucj_ansatz,
     make_restricted_gcr_jacobian,
     make_restricted_gcr_subspace_jacobian,
+    make_restricted_gcr_vjp,
 )
 from xquces.ucj._unitary import (
     AntiHermitianUnitaryChart,
@@ -129,8 +131,10 @@ __all__ = [
     "GCR3ProductPairUCCDParameterization",
     "GCR4ProductPairUCCDParameterization",
     "gcr_from_ucj_ansatz",
+    "IGCR2LayeredAnsatz",
     "make_restricted_gcr_jacobian",
     "make_restricted_gcr_subspace_jacobian",
+    "make_restricted_gcr_vjp",
     "AntiHermitianUnitaryChart",
     "antihermitian_from_parameters",
     "parameters_from_antihermitian",

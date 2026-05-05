@@ -2,6 +2,7 @@ from xquces.gcr.igcr import (
     GCR2FullUnitaryChart,
     GCRParameterBlock,
     IGCR2Ansatz,
+    IGCR2LayeredAnsatz,
     IGCR2BlockDiagLeftUnitaryChart,
     IGCR2LeftUnitaryChart,
     IGCR2RealReferenceOVUnitaryChart,
@@ -35,6 +36,7 @@ from xquces.gcr.pair_uccd_reference import (
 from xquces.gcr.restricted_jacobian import (
     make_restricted_gcr_jacobian,
     make_restricted_gcr_subspace_jacobian,
+    make_restricted_gcr_vjp,
 )
 from xquces.gcr.references import (
     CompositeReferenceAnsatzParameterization,
@@ -53,6 +55,7 @@ __all__ = [
     "GCR3ProductPairUCCDParameterization",
     "GCR4ProductPairUCCDParameterization",
     "IGCR2Ansatz",
+    "IGCR2LayeredAnsatz",
     "IGCR2BlockDiagLeftUnitaryChart",
     "IGCR2LeftUnitaryChart",
     "IGCR2RealReferenceOVUnitaryChart",
@@ -82,6 +85,7 @@ __all__ = [
     "make_composite_reference_ansatz_vjp",
     "make_restricted_gcr_jacobian",
     "make_restricted_gcr_subspace_jacobian",
+    "make_restricted_gcr_vjp",
     "parameter_blocks",
     "parameters_from_t2",
     "random_parameters",

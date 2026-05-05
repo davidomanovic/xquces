@@ -41,7 +41,7 @@ N_REPS = 1
 HYDROGEN_R = 1.0
 N2_R = 1.1
 NATIVE_BASIS_GATES = ("cx", "rz", "sx", "x")
-METHODS = ("GCR2-HF", "GCR2-pUCCD pair", "GCR2-pUCCD spin")
+METHODS = ("GCR2-HF", "GCR2-pUCCD pair") #, "GCR2-pUCCD spin")
 METRICS = ("Parameters", "Depth", "Total", "Two-qubit")
 METHOD_COLORS = {
     "GCR2-HF": "#1f77b4",

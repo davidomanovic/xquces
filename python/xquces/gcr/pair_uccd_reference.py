@@ -15,6 +15,7 @@ from xquces.gcr.charts import (
 )
 from xquces.gcr.igcr import (
     IGCR2Ansatz,
+    IGCR2LayeredAnsatz,
     IGCR2SpinRestrictedParameterization,
     IGCR3Ansatz,
     IGCR3SpinRestrictedParameterization,
@@ -564,6 +565,7 @@ def _transfer_params(
             and isinstance(previous_parameterization, type(self))
             and previous_parameterization.norb == self.norb
             and previous_parameterization.nocc == self.nocc
+            and previous_parameterization.n_params == self.n_params
             and _is_trivial_relabel(self.norb, old_for_new, phases)
         ):
             return np.array(prev, copy=True)
@@ -1050,56 +1052,9 @@ def _final_unitary_for_transfer(left_param_unitary, right_eff, right_chart, nocc
 
 def _igcr2_product_transfer_parameters_from_ansatz(
     parameterization: IGCR2SpinRestrictedParameterization,
-    ansatz: IGCR2Ansatz,
+    ansatz: IGCR2Ansatz | IGCR2LayeredAnsatz,
 ) -> np.ndarray:
-    if ansatz.norb != parameterization.norb:
-        raise ValueError("ansatz norb does not match parameterization")
-    if not ansatz.is_spin_restricted:
-        raise TypeError("expected a spin-restricted ansatz")
-    left_chart = parameterization._left_orbital_chart
-    if hasattr(left_chart, "parameters_and_right_phase_from_unitary"):
-        left_params, right_phase = left_chart.parameters_and_right_phase_from_unitary(
-            np.asarray(ansatz.left, dtype=np.complex128)
-        )
-    else:
-        left_params = left_chart.parameters_from_unitary(
-            np.asarray(ansatz.left, dtype=np.complex128)
-        )
-        right_phase = np.zeros(parameterization.norb, dtype=np.float64)
-
-    pair_eff = ansatz.diagonal.pair
-    right_eff = _diag_unitary(right_phase) @ np.asarray(
-        ansatz.right, dtype=np.complex128
-    )
-    out = np.zeros(parameterization.n_params, dtype=np.float64)
-    idx = 0
-
-    n = parameterization.n_left_orbital_rotation_params
-    out[idx : idx + n] = left_params
-    idx += n
-
-    n = parameterization.n_pair_params
-    out[idx : idx + n] = np.asarray(
-        [pair_eff[p, q] for p, q in parameterization.pair_indices],
-        dtype=np.float64,
-    )
-    idx += n
-
-    n = parameterization.n_right_orbital_rotation_params
-    left_param_unitary = parameterization._left_orbital_chart.unitary_from_parameters(
-        left_params,
-        parameterization.norb,
-    )
-    final_eff = _final_unitary_for_transfer(
-        left_param_unitary,
-        right_eff,
-        parameterization.right_orbital_chart,
-        parameterization.nocc,
-    )
-    out[idx : idx + n] = parameterization.right_orbital_chart.parameters_from_unitary(
-        final_eff
-    )
-    return parameterization._public_parameters_from_native(out)
+    return parameterization.parameters_from_ansatz(ansatz)
 
 
 def _igcr3_product_transfer_parameters_from_ansatz(
@@ -1570,6 +1525,7 @@ def _transfer_product_params(
             and isinstance(previous_parameterization, type(self))
             and previous_parameterization.norb == self.norb
             and previous_parameterization.nocc == self.nocc
+            and previous_parameterization.n_params == self.n_params
             and _is_trivial_relabel(self.norb, old_for_new, phases)
         ):
             return np.array(prev, copy=True)
@@ -1683,9 +1639,12 @@ class _ProductPairUCCDReferenceMixin(_PairUCCDReferenceMixin):
 class GCR2ProductPairUCCDParameterization(_ProductPairUCCDReferenceMixin):
     norb: int
     nocc: int
+    layers: int = 1
+    shared_diagonal: bool = False
     interaction_pairs: list[tuple[int, int]] | None = None
     base_parameterization: IGCR2SpinRestrictedParameterization | None = None
     left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
+    middle_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
     right_orbital_chart_override: object = field(default_factory=GCR2FullUnitaryChart)
     real_right_orbital_chart: bool = False
     left_right_ov_relative_scale: float | None = None
@@ -1697,14 +1656,19 @@ class GCR2ProductPairUCCDParameterization(_ProductPairUCCDReferenceMixin):
         return IGCR2SpinRestrictedParameterization(
             self.norb,
             self.nocc,
+            layers=self.layers,
+            shared_diagonal=self.shared_diagonal,
             interaction_pairs=self.interaction_pairs,
             left_orbital_chart=self.left_orbital_chart,
+            middle_orbital_chart=self.middle_orbital_chart,
             right_orbital_chart_override=self.right_orbital_chart_override,
             real_right_orbital_chart=self.real_right_orbital_chart,
             left_right_ov_relative_scale=self.left_right_ov_relative_scale,
         )
 
     def _ansatz_from_ucj_ansatz(self, ansatz: UCJAnsatz):
+        if self.layers != 1:
+            return None
         return _igcr2_product_ansatz_from_ucj(ansatz, self.nocc)
 
 
