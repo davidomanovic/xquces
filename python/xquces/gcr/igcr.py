@@ -58,7 +58,12 @@ from xquces.gcr.utils import (
     orbital_transport_unitary_from_overlap,
 )
 from xquces.orbitals import apply_orbital_rotation
-from xquces.ucj.init import UCJBalancedDFSeed, UCJRestrictedProjectedDFSeed
+from xquces.ucj.init import (
+    CCSDDoubleFactorization,
+    UCJBalancedDFSeed,
+    UCJRestrictedProjectedDFSeed,
+    factorize_ccsd_t_amplitudes,
+)
 from xquces.ucj.model import SpinBalancedSpec, SpinRestrictedSpec, UCJAnsatz
 
 
@@ -189,23 +194,40 @@ class IGCR2Ansatz:
         )
 
     @classmethod
+    def from_t_amplitudes(cls, t2, t1=None, **df_options) -> "IGCR2Ansatz":
+        """Build from CCSD t-amplitudes via direct double factorization (single layer)."""
+        nocc = np.asarray(t2).shape[0]
+        result = layered_igcr2_from_ccsd_t_amplitudes(
+            t2, t1=t1, layers=1, nocc=nocc, **df_options
+        )
+        assert isinstance(result, cls)
+        return result
+
+    @classmethod
     def from_ucj(cls, ucj: UCJAnsatz, nocc: int):
-        gcr = gcr_from_ucj_ansatz(ucj)
-        return cls.from_gcr_ansatz(gcr, nocc=nocc)
+        raise NotImplementedError(
+            "IGCR2Ansatz.from_ucj was removed. "
+            "Use IGCR2Ansatz.from_t_amplitudes(t2, t1=t1) instead."
+        )
 
     @classmethod
     def from_ucj_ansatz(cls, ansatz: UCJAnsatz, nocc: int):
-        return cls.from_ucj(ansatz, nocc=nocc)
+        raise NotImplementedError(
+            "IGCR2Ansatz.from_ucj_ansatz was removed. "
+            "Use IGCR2Ansatz.from_t_amplitudes(t2, t1=t1) instead."
+        )
 
     @classmethod
     def from_t_balanced(cls, t2, **kwargs):
         ucj = UCJBalancedDFSeed(t2=t2, **kwargs).build_ansatz()
-        return cls.from_ucj(ucj, nocc=t2.shape[0])
+        gcr = gcr_from_ucj_ansatz(ucj)
+        return cls.from_gcr_ansatz(gcr, nocc=t2.shape[0])
 
     @classmethod
     def from_t_restricted(cls, t2, **kwargs):
-        ucj = UCJRestrictedProjectedDFSeed(t2=t2, **kwargs).build_ansatz()
-        return cls.from_ucj(ucj, nocc=t2.shape[0])
+        nocc = np.asarray(t2).shape[0]
+        t1 = kwargs.pop("t1", None)
+        return layered_igcr2_from_ccsd_t_amplitudes(t2, t1=t1, layers=1, nocc=nocc, **kwargs)
 
 
 @dataclass(frozen=True)
@@ -432,7 +454,7 @@ def _igcr2_layered_spin_restricted_ansatz_from_ucj(
         )
     if ansatz.n_layers == 1 and layers > 1:
         return _as_layered_igcr2_spin_restricted_ansatz(
-            IGCR2Ansatz.from_ucj_ansatz(ansatz, nocc),
+            IGCR2Ansatz.from_gcr_ansatz(gcr_from_ucj_ansatz(ansatz), nocc),
             layers,
         )
     norb = ansatz.norb
@@ -469,6 +491,84 @@ def _igcr2_layered_spin_restricted_ansatz_from_ucj(
     for idx in range(1, layers):
         rotations.append(layer_bases[idx - 1].conj().T @ layer_left_factors[idx])
     rotations.append(layer_bases[-1].conj().T @ final)
+    return IGCR2LayeredAnsatz(
+        diagonals=tuple(diagonals),
+        rotations=tuple(rotations),
+        nocc=nocc,
+    )
+
+
+def layered_igcr2_from_ccsd_t_amplitudes(
+    t2: np.ndarray,
+    t1: np.ndarray | None = None,
+    *,
+    layers: int = 1,
+    nocc: int | None = None,
+    **df_options,
+) -> "IGCR2Ansatz | IGCR2LayeredAnsatz":
+    """Build an iGCR-2 ansatz directly from CCSD t-amplitudes.
+
+    Calls ffsim with n_reps=layers to obtain L double-factorization terms
+    (U_1, J_1), ..., (U_L, J_L) and the final orbital rotation U_F from t1.
+    Each diagonal J_l is reduced independently (iGCR-2 redundancy removal).
+    Orbital rotations are merged as:
+
+        R_0     = U_1 @ phase_1
+        R_k     = U_{k-1}^† @ U_k @ phase_k   (k = 1, ..., L-1)
+        R_L     = U_{L-1}^† @ U_F
+
+    Returns IGCR2Ansatz for layers=1, IGCR2LayeredAnsatz for layers>1.
+    Extra keyword arguments are forwarded to factorize_ccsd_t_amplitudes.
+    """
+    t2 = np.asarray(t2, dtype=np.float64)
+    if nocc is None:
+        nocc = t2.shape[0]
+
+    df: CCSDDoubleFactorization = factorize_ccsd_t_amplitudes(
+        t2, t1=t1, n_reps=layers, **df_options
+    )
+
+    norb = df.orbital_rotations[0].shape[0]
+    identity = np.eye(norb, dtype=np.complex128)
+    n_df = len(df.orbital_rotations)
+    final = (
+        df.final_orbital_rotation if df.final_orbital_rotation is not None else identity
+    )
+
+    diagonals: list[IGCR2SpinRestrictedSpec] = []
+    layer_bases: list[np.ndarray] = []
+    layer_left_factors: list[np.ndarray] = []
+    for ell in range(layers):
+        if ell < n_df:
+            J_l = df.diagonal_coulomb_mats[ell]
+            double_l = np.diag(J_l).copy()
+            pair_l = J_l.copy()
+            np.fill_diagonal(pair_l, 0.0)
+            spec_l = SpinRestrictedSpec(double_params=double_l, pair_params=pair_l)
+            diagonal_l = reduce_spin_restricted(spec_l)
+            phase_vec_l = _restricted_left_phase_vector(double_l, nocc)
+            U_l = df.orbital_rotations[ell]
+            layer_left_l = U_l @ _diag_unitary(phase_vec_l)
+        else:
+            diagonal_l = _zero_igcr2_spin_restricted_spec(norb)
+            layer_left_l = identity
+            U_l = identity
+        diagonals.append(diagonal_l)
+        layer_bases.append(U_l)
+        layer_left_factors.append(layer_left_l)
+
+    rotations: list[np.ndarray] = [layer_left_factors[0]]
+    for k in range(1, layers):
+        rotations.append(layer_bases[k - 1].conj().T @ layer_left_factors[k])
+    rotations.append(layer_bases[-1].conj().T @ final)
+
+    if layers == 1:
+        return IGCR2Ansatz(
+            diagonal=diagonals[0],
+            left=rotations[0],
+            right=rotations[1],
+            nocc=nocc,
+        )
     return IGCR2LayeredAnsatz(
         diagonals=tuple(diagonals),
         rotations=tuple(rotations),
@@ -732,15 +832,27 @@ class IGCR2SpinRestrictedParameterization:
         out[idx : idx + n] = self.right_orbital_chart.parameters_from_unitary(final_eff)
         return self._public_parameters_from_native(out)
 
+    def parameters_from_t_amplitudes(
+        self,
+        t2: np.ndarray,
+        t1: np.ndarray | None = None,
+        **df_options,
+    ) -> np.ndarray:
+        """Seed parameters directly from CCSD t-amplitudes.
+
+        Calls ffsim with n_reps=self.layers to obtain self.layers distinct
+        double-factorization terms, one per iGCR-2 layer, and reduces each
+        diagonal independently before extracting parameters.
+        """
+        ansatz = layered_igcr2_from_ccsd_t_amplitudes(
+            t2, t1=t1, layers=self.layers, nocc=self.nocc, **df_options
+        )
+        return self.parameters_from_ansatz(ansatz)
+
     def parameters_from_ucj_ansatz(self, ansatz: UCJAnsatz):
-        if self.layers == 1:
-            return self.parameters_from_ansatz(
-                IGCR2Ansatz.from_ucj_ansatz(ansatz, self.nocc)
-            )
-        return self.parameters_from_ansatz(
-            _igcr2_layered_spin_restricted_ansatz_from_ucj(
-                ansatz, self.nocc, self.layers
-            )
+        raise NotImplementedError(
+            "IGCR2SpinRestrictedParameterization.parameters_from_ucj_ansatz was removed. "
+            "Use parameters_from_t_amplitudes(t2, t1=t1) instead."
         )
 
     def transfer_parameters_from(
@@ -1025,9 +1137,8 @@ class IGCR2SpinBalancedParameterization:
         return self._public_parameters_from_native(out)
 
     def parameters_from_ucj_ansatz(self, ansatz: UCJAnsatz):
-        return self.parameters_from_ansatz(
-            IGCR2Ansatz.from_ucj_ansatz(ansatz, self.nocc)
-        )
+        gcr = gcr_from_ucj_ansatz(ansatz)
+        return self.parameters_from_ansatz(IGCR2Ansatz.from_gcr_ansatz(gcr, self.nocc))
 
     def transfer_parameters_from(
         self,
@@ -1487,11 +1598,8 @@ class IGCR3Ansatz:
         tau_scale: float = 0.0,
         omega_scale: float = 0.0,
     ) -> "IGCR3Ansatz":
-        return cls.from_igcr2_ansatz(
-            IGCR2Ansatz.from_ucj_ansatz(ansatz, nocc=nocc),
-            tau_scale=tau_scale,
-            omega_scale=omega_scale,
-        )
+        igcr2 = IGCR2Ansatz.from_gcr_ansatz(gcr_from_ucj_ansatz(ansatz), nocc=nocc)
+        return cls.from_igcr2_ansatz(igcr2, tau_scale=tau_scale, omega_scale=omega_scale)
 
     @classmethod
     def from_ucj(
@@ -1502,12 +1610,7 @@ class IGCR3Ansatz:
         tau_scale: float = 0.0,
         omega_scale: float = 0.0,
     ) -> "IGCR3Ansatz":
-        return cls.from_ucj_ansatz(
-            ansatz,
-            nocc,
-            tau_scale=tau_scale,
-            omega_scale=omega_scale,
-        )
+        return cls.from_ucj_ansatz(ansatz, nocc, tau_scale=tau_scale, omega_scale=omega_scale)
 
     @classmethod
     def from_gcr_ansatz(
@@ -2602,8 +2705,9 @@ class IGCR4Ansatz:
         rho_scale: float = 0.0,
         sigma_scale: float = 0.0,
     ) -> "IGCR4Ansatz":
+        igcr2 = IGCR2Ansatz.from_gcr_ansatz(gcr_from_ucj_ansatz(ansatz), nocc=nocc)
         return cls.from_igcr2_ansatz(
-            IGCR2Ansatz.from_ucj_ansatz(ansatz, nocc=nocc),
+            igcr2,
             tau_scale=tau_scale,
             omega_scale=omega_scale,
             eta_scale=eta_scale,
@@ -2624,13 +2728,9 @@ class IGCR4Ansatz:
         sigma_scale: float = 0.0,
     ) -> "IGCR4Ansatz":
         return cls.from_ucj_ansatz(
-            ansatz,
-            nocc,
-            tau_scale=tau_scale,
-            omega_scale=omega_scale,
-            eta_scale=eta_scale,
-            rho_scale=rho_scale,
-            sigma_scale=sigma_scale,
+            ansatz, nocc,
+            tau_scale=tau_scale, omega_scale=omega_scale,
+            eta_scale=eta_scale, rho_scale=rho_scale, sigma_scale=sigma_scale,
         )
 
     @classmethod
@@ -3724,17 +3824,10 @@ def parameters_from_t2(
         else:
             order = 2
     if order == 2:
-        kwargs.setdefault("n_reps", int(getattr(parameterization, "layers", 1)))
-    else:
-        kwargs.setdefault("n_reps", 1)
-    if order == 2:
         target = getattr(parameterization, "implementation", parameterization)
-        if (
-            isinstance(target, IGCR2SpinRestrictedParameterization)
-            and target.layers > 1
-        ):
-            ucj = UCJRestrictedProjectedDFSeed(t2=t2, **kwargs).build_ansatz()
-            return target.parameters_from_ucj_ansatz(ucj)
+        if isinstance(target, IGCR2SpinRestrictedParameterization):
+            t1 = kwargs.pop("t1", None)
+            return target.parameters_from_t_amplitudes(t2, t1=t1, **kwargs)
         ansatz = IGCR2Ansatz.from_t_restricted(t2, **kwargs)
     elif order == 3:
         ansatz = IGCR3Ansatz.from_t_restricted(t2, **kwargs)

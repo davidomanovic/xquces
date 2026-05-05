@@ -23,6 +23,7 @@ from xquces.gcr.igcr import (
     IGCR4Ansatz,
     IGCR4SpinRestrictedParameterization,
     IGCR4SpinRestrictedSpec,
+    layered_igcr2_from_ccsd_t_amplitudes,
     reduce_spin_restricted,
     relabel_igcr2_ansatz_orbitals,
     relabel_igcr3_ansatz_orbitals,
@@ -722,6 +723,21 @@ class _PairUCCDReferenceMixin:
             np.zeros(self.n_ansatz_params, dtype=np.float64),
         )
 
+    def parameters_from_t_amplitudes(
+        self,
+        t2: np.ndarray,
+        t1: np.ndarray | None = None,
+        *,
+        scale: float = 0.5,
+        **df_options,
+    ) -> np.ndarray:
+        """Seed parameters from CCSD t-amplitudes using direct double factorization.
+
+        Subclasses override to seed the ansatz part; the base implementation
+        zeros the ansatz (equivalent to parameters_from_t2).
+        """
+        return self.parameters_from_t2(t2, scale=scale)
+
     def parameters_from_t2_and_ucj_ansatz(
         self,
         t2: np.ndarray,
@@ -785,6 +801,26 @@ class GCR2PairUCCDParameterization(_ExponentialPairUCCDReferenceMixin):
             right_orbital_chart_override=self.right_orbital_chart_override,
             real_right_orbital_chart=self.real_right_orbital_chart,
             left_right_ov_relative_scale=self.left_right_ov_relative_scale,
+        )
+
+    def _ansatz_from_ucj_ansatz(self, ansatz: UCJAnsatz):
+        return _igcr2_product_ansatz_from_ucj(ansatz, self.nocc)
+
+    def parameters_from_t_amplitudes(
+        self,
+        t2: np.ndarray,
+        t1: np.ndarray | None = None,
+        *,
+        scale: float = 0.5,
+        **df_options,
+    ) -> np.ndarray:
+        igcr2 = layered_igcr2_from_ccsd_t_amplitudes(
+            t2, t1=t1, layers=1, nocc=self.nocc, **df_options
+        )
+        combined = self.parameters_from_ansatz(igcr2)
+        return _combined_seed(
+            self.reference_parameters_from_t2(t2, scale=scale),
+            combined[self.n_reference_params:],
         )
 
 
@@ -895,6 +931,26 @@ class GCR3PairUCCDParameterization(_ExponentialPairUCCDReferenceMixin):
             accept_tol=accept_tol,
         )
         return info if return_info else info.params
+
+    def parameters_from_t_amplitudes(
+        self,
+        t2: np.ndarray,
+        t1: np.ndarray | None = None,
+        *,
+        scale: float = 0.5,
+        **df_options,
+    ) -> np.ndarray:
+        igcr2 = layered_igcr2_from_ccsd_t_amplitudes(
+            t2, t1=t1, layers=1, nocc=self.nocc, **df_options
+        )
+        ansatz = IGCR3Ansatz.from_igcr2_ansatz(
+            igcr2, tau_scale=self.tau_seed_scale, omega_scale=self.omega_seed_scale
+        )
+        combined = self.parameters_from_ansatz(ansatz)
+        return _combined_seed(
+            self.reference_parameters_from_t2(t2, scale=scale),
+            combined[self.n_reference_params:],
+        )
 
 
 @dataclass(frozen=True)
@@ -1019,6 +1075,32 @@ class GCR4PairUCCDParameterization(_ExponentialPairUCCDReferenceMixin):
             accept_tol=accept_tol,
         )
         return info if return_info else info.params
+
+    def parameters_from_t_amplitudes(
+        self,
+        t2: np.ndarray,
+        t1: np.ndarray | None = None,
+        *,
+        scale: float = 0.5,
+        **df_options,
+    ) -> np.ndarray:
+        igcr2 = layered_igcr2_from_ccsd_t_amplitudes(
+            t2, t1=t1, layers=1, nocc=self.nocc, **df_options
+        )
+        ansatz = IGCR4Ansatz.from_igcr2_ansatz(
+            igcr2,
+            tau_scale=self.tau_seed_scale,
+            omega_scale=self.omega_seed_scale,
+            eta_scale=self.eta_seed_scale,
+            rho_scale=self.rho_seed_scale,
+            sigma_scale=self.sigma_seed_scale,
+        )
+        combined = self.parameters_from_ansatz(ansatz)
+        return _combined_seed(
+            self.reference_parameters_from_t2(t2, scale=scale),
+            combined[self.n_reference_params:],
+        )
+
 
 # Product pair-UCCD reference parameterizations
 
@@ -1671,6 +1753,23 @@ class GCR2ProductPairUCCDParameterization(_ProductPairUCCDReferenceMixin):
             return None
         return _igcr2_product_ansatz_from_ucj(ansatz, self.nocc)
 
+    def parameters_from_t_amplitudes(
+        self,
+        t2: np.ndarray,
+        t1: np.ndarray | None = None,
+        *,
+        scale: float = 0.5,
+        **df_options,
+    ) -> np.ndarray:
+        igcr2 = layered_igcr2_from_ccsd_t_amplitudes(
+            t2, t1=t1, layers=self.layers, nocc=self.nocc, **df_options
+        )
+        combined = self.parameters_from_ansatz(igcr2)
+        return _combined_seed(
+            self.reference_parameters_from_t2(t2, scale=scale),
+            combined[self.n_reference_params:],
+        )
+
 
 @dataclass(frozen=True)
 class GCR3ProductPairUCCDParameterization(_ProductPairUCCDReferenceMixin):
@@ -1702,6 +1801,26 @@ class GCR3ProductPairUCCDParameterization(_ProductPairUCCDReferenceMixin):
             _igcr2_product_ansatz_from_ucj(ansatz, self.nocc),
             tau_scale=self.tau_seed_scale,
             omega_scale=self.omega_seed_scale,
+        )
+
+    def parameters_from_t_amplitudes(
+        self,
+        t2: np.ndarray,
+        t1: np.ndarray | None = None,
+        *,
+        scale: float = 0.5,
+        **df_options,
+    ) -> np.ndarray:
+        igcr2 = layered_igcr2_from_ccsd_t_amplitudes(
+            t2, t1=t1, layers=1, nocc=self.nocc, **df_options
+        )
+        ansatz = IGCR3Ansatz.from_igcr2_ansatz(
+            igcr2, tau_scale=self.tau_seed_scale, omega_scale=self.omega_seed_scale
+        )
+        combined = self.parameters_from_ansatz(ansatz)
+        return _combined_seed(
+            self.reference_parameters_from_t2(t2, scale=scale),
+            combined[self.n_reference_params:],
         )
 
 
@@ -1741,6 +1860,31 @@ class GCR4ProductPairUCCDParameterization(_ProductPairUCCDReferenceMixin):
             eta_scale=self.eta_seed_scale,
             rho_scale=self.rho_seed_scale,
             sigma_scale=self.sigma_seed_scale,
+        )
+
+    def parameters_from_t_amplitudes(
+        self,
+        t2: np.ndarray,
+        t1: np.ndarray | None = None,
+        *,
+        scale: float = 0.5,
+        **df_options,
+    ) -> np.ndarray:
+        igcr2 = layered_igcr2_from_ccsd_t_amplitudes(
+            t2, t1=t1, layers=1, nocc=self.nocc, **df_options
+        )
+        ansatz = IGCR4Ansatz.from_igcr2_ansatz(
+            igcr2,
+            tau_scale=self.tau_seed_scale,
+            omega_scale=self.omega_seed_scale,
+            eta_scale=self.eta_seed_scale,
+            rho_scale=self.rho_seed_scale,
+            sigma_scale=self.sigma_seed_scale,
+        )
+        combined = self.parameters_from_ansatz(ansatz)
+        return _combined_seed(
+            self.reference_parameters_from_t2(t2, scale=scale),
+            combined[self.n_reference_params:],
         )
 
 

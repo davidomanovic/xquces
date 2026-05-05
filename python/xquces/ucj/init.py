@@ -357,6 +357,83 @@ class UCJRestrictedProjectedDFSeed:
 
 
 @dataclass(frozen=True)
+class CCSDDoubleFactorization:
+    """Raw spin-restricted double-factorization of CCSD t-amplitudes.
+
+    Each diagonal_coulomb_mats[l] is a (norb, norb) symmetric matrix obtained by
+    averaging the spin-up and spin-down channels of the l-th ffsim factor.
+    orbital_rotations[l] is the corresponding canonicalized unitary.
+    final_orbital_rotation is derived from t1 (or None if t1 was not provided).
+    """
+
+    orbital_rotations: tuple[np.ndarray, ...]
+    diagonal_coulomb_mats: tuple[np.ndarray, ...]
+    final_orbital_rotation: np.ndarray | None
+
+
+def factorize_ccsd_t_amplitudes(
+    t2: np.ndarray,
+    t1: np.ndarray | None = None,
+    n_reps: int | None = None,
+    *,
+    tol: float = 1e-8,
+    optimize: bool = False,
+    method: str = "L-BFGS-B",
+    callback=None,
+    options: dict | None = None,
+    regularization: float = 0.0,
+    multi_stage_start: int | None = None,
+    multi_stage_step: int | None = None,
+) -> CCSDDoubleFactorization:
+    """Double-factorize CCSD t-amplitudes via ffsim, returning spin-restricted factors.
+
+    Uses ffsim.UCJOpSpinBalanced.from_t_amplitudes and projects each factor to the
+    spin-restricted subspace by averaging the alpha and beta diagonal Coulomb matrices.
+    The final orbital rotation is derived from t1 when provided.
+    """
+    t2 = np.asarray(t2, dtype=np.float64)
+    t1_ffsim = None if t1 is None else np.asarray(t1, dtype=np.complex128)
+
+    stock = ffsim.UCJOpSpinBalanced.from_t_amplitudes(
+        t2,
+        t1=t1_ffsim,
+        n_reps=n_reps,
+        interaction_pairs=None,
+        tol=tol,
+        optimize=optimize,
+        method=method,
+        callback=callback,
+        options=options,
+        regularization=regularization,
+        multi_stage_start=multi_stage_start,
+        multi_stage_step=multi_stage_step,
+    )
+
+    orbital_rotations = []
+    diagonal_coulomb_mats = []
+    for mats, u in zip(stock.diag_coulomb_mats, stock.orbital_rotations):
+        same = np.asarray(mats[0], dtype=np.float64)
+        mixed = np.asarray(mats[1], dtype=np.float64)
+        same = 0.5 * (same + same.T)
+        mixed = 0.5 * (mixed + mixed.T)
+        avg = 0.5 * (same + mixed)
+        orbital_rotations.append(canonicalize_unitary(np.asarray(u, dtype=np.complex128)))
+        diagonal_coulomb_mats.append(avg)
+
+    final_orbital_rotation = None
+    if stock.final_orbital_rotation is not None:
+        final_orbital_rotation = canonicalize_unitary(
+            np.asarray(stock.final_orbital_rotation, dtype=np.complex128)
+        )
+
+    return CCSDDoubleFactorization(
+        orbital_rotations=tuple(orbital_rotations),
+        diagonal_coulomb_mats=tuple(diagonal_coulomb_mats),
+        final_orbital_rotation=final_orbital_rotation,
+    )
+
+
+@dataclass(frozen=True)
 class GaugeFixedUCJRestrictedProjectedDFSeed:
     t2: np.ndarray
     t1: np.ndarray | None = None
