@@ -18,6 +18,7 @@ from xquces.gates import (
 )
 from xquces.gcr.charts import (
     GCR2FullUnitaryChart,
+    GCR2TraceFixedFullUnitaryChart,
     IGCR2BlockDiagLeftUnitaryChart,
     IGCR2LeftUnitaryChart,
     IGCR2RealReferenceOVUnitaryChart,
@@ -4012,6 +4013,7 @@ class IGCRSpinRestrictedParameterization:
 
 __all__ = [
     "GCR2FullUnitaryChart",
+    "GCR2TraceFixedFullUnitaryChart",
     "GCRParameterBlock",
     "IGCR2Ansatz",
     "IGCR2LayeredAnsatz",

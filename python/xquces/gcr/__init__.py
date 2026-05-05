@@ -1,5 +1,6 @@
 from xquces.gcr.igcr import (
     GCR2FullUnitaryChart,
+    GCR2TraceFixedFullUnitaryChart,
     GCRParameterBlock,
     IGCR2Ansatz,
     IGCR2LayeredAnsatz,
@@ -50,6 +51,7 @@ from xquces.gcr.references import (
 
 __all__ = [
     "GCR2FullUnitaryChart",
+    "GCR2TraceFixedFullUnitaryChart",
     "GCRParameterBlock",
     "GCRAnsatz",
     "GCR2ProductPairUCCDParameterization",

@@ -9,6 +9,7 @@ import numpy as np
 from xquces.basis import occ_rows, reshape_state
 from xquces.gcr.charts import (
     GCR2FullUnitaryChart,
+    GCR2TraceFixedFullUnitaryChart,
     IGCR2BlockDiagLeftUnitaryChart,
     IGCR2LeftUnitaryChart,
     IGCR2RealReferenceOVUnitaryChart,
@@ -56,9 +57,26 @@ def _full_antihermitian_basis(norb: int) -> np.ndarray:
     return basis
 
 
+def _trace_fixed_full_antihermitian_basis(norb: int) -> np.ndarray:
+    pairs = list(itertools.combinations(range(norb), 2))
+    basis = np.zeros((norb * norb - 1, norb, norb), dtype=np.complex128)
+
+    idx = 0
+    for p in range(max(0, norb - 1)):
+        basis[idx, p, p] = 1j
+        basis[idx, norb - 1, norb - 1] = -1j
+        idx += 1
+
+    offdiag = _antihermitian_basis_from_pairs(norb, pairs)
+    basis[idx:] = offdiag
+    return basis
+
+
 def _left_chart_basis(chart: object, norb: int) -> np.ndarray:
     if isinstance(chart, GCR2FullUnitaryChart):
         return _full_antihermitian_basis(norb)
+    if isinstance(chart, GCR2TraceFixedFullUnitaryChart):
+        return _trace_fixed_full_antihermitian_basis(norb)
     if isinstance(chart, IGCR2LeftUnitaryChart):
         pairs = list(itertools.combinations(range(norb), 2))
         return _antihermitian_basis_from_pairs(norb, pairs)
@@ -89,6 +107,8 @@ def _left_chart_kappa(
 def _right_chart_basis(chart: object, norb: int) -> np.ndarray:
     if isinstance(chart, GCR2FullUnitaryChart):
         return _full_antihermitian_basis(norb)
+    if isinstance(chart, GCR2TraceFixedFullUnitaryChart):
+        return _trace_fixed_full_antihermitian_basis(norb)
     if isinstance(chart, IGCR2ReferenceOVUnitaryChart):
         nocc = chart.nocc
         nvirt = chart.nvirt
@@ -128,6 +148,11 @@ def _right_chart_kappa(chart: object, params: np.ndarray, norb: int) -> np.ndarr
         if params.size == 0:
             return np.zeros((norb, norb), dtype=np.complex128)
         basis = _full_antihermitian_basis(norb)
+        return np.tensordot(params, basis, axes=(0, 0))
+    if isinstance(chart, GCR2TraceFixedFullUnitaryChart):
+        if params.size == 0:
+            return np.zeros((norb, norb), dtype=np.complex128)
+        basis = _trace_fixed_full_antihermitian_basis(norb)
         return np.tensordot(params, basis, axes=(0, 0))
     if isinstance(chart, IGCR2ReferenceOVUnitaryChart):
         if params.size == 0:

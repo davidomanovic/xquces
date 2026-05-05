@@ -49,6 +49,54 @@ class GCR2FullUnitaryChart:
 
 
 @dataclass(frozen=True)
+class GCR2TraceFixedFullUnitaryChart:
+    """Full spin-restricted orbital rotation with the global phase removed.
+
+    The omitted direction is the trace of the anti-Hermitian generator.  On a
+    fixed-electron-number state it contributes only a global phase, while the
+    remaining ``norb - 1`` diagonal phase differences are still variationally
+    meaningful for correlated references such as pUCCD.
+    """
+
+    def n_params(self, norb: int) -> int:
+        return norb**2 - 1
+
+    def unitary_from_parameters(self, params: np.ndarray, norb: int) -> np.ndarray:
+        params = np.asarray(params, dtype=np.float64)
+        expected = self.n_params(norb)
+        if params.shape != (expected,):
+            raise ValueError(f"Expected {(expected,)}, got {params.shape}.")
+        diag = np.zeros(norb, dtype=np.float64)
+        if norb:
+            diag[:-1] = params[: norb - 1]
+            diag[-1] = -float(np.sum(diag[:-1]))
+        full = np.concatenate([diag, params[norb - 1 :]])
+        return np.asarray(
+            scipy.linalg.expm(antihermitian_from_parameters(full, norb)),
+            dtype=np.complex128,
+        )
+
+    def parameters_from_unitary(self, unitary: np.ndarray) -> np.ndarray:
+        unitary = np.asarray(unitary, dtype=np.complex128)
+        if unitary.ndim != 2 or unitary.shape[0] != unitary.shape[1]:
+            raise ValueError("unitary must be square")
+        if not np.allclose(
+            unitary.conj().T @ unitary,
+            np.eye(unitary.shape[0]),
+            atol=1e-10,
+        ):
+            raise ValueError("unitary must be unitary")
+        generator = scipy.linalg.logm(unitary)
+        generator = 0.5 * (generator - generator.conj().T)
+        diag = np.array(np.imag(np.diag(generator)), dtype=np.float64, copy=True)
+        diag -= float(np.mean(diag))
+        for p, value in enumerate(diag):
+            generator[p, p] = 1j * value
+        full = parameters_from_antihermitian(generator)
+        return np.concatenate([full[: unitary.shape[0] - 1], full[unitary.shape[0] :]])
+
+
+@dataclass(frozen=True)
 class IGCR2LeftUnitaryChart:
     def n_params(self, norb: int) -> int:
         return norb * (norb - 1)
@@ -223,6 +271,7 @@ class IGCR2RealReferenceOVUnitaryChart:
 
 __all__ = [
     "GCR2FullUnitaryChart",
+    "GCR2TraceFixedFullUnitaryChart",
     "IGCR2BlockDiagLeftUnitaryChart",
     "IGCR2LeftUnitaryChart",
     "IGCR2RealReferenceOVUnitaryChart",

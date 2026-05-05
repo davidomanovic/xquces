@@ -8,6 +8,7 @@ import numpy as np
 from scipy.optimize import minimize
 
 from xquces.gcr.charts import (
+    GCR2TraceFixedFullUnitaryChart,
     IGCR2LeftUnitaryChart,
     IGCR2RealReferenceOVUnitaryChart,
     IGCR2ReferenceOVUnitaryChart,
@@ -784,7 +785,7 @@ class GCR2PairUCCDParameterization(_ExponentialPairUCCDReferenceMixin):
     interaction_pairs: list[tuple[int, int]] | None = None
     base_parameterization: IGCR2SpinRestrictedParameterization | None = None
     left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
-    right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
+    right_orbital_chart_override: object = field(default_factory=GCR2TraceFixedFullUnitaryChart)
     real_right_orbital_chart: bool = False
     left_right_ov_relative_scale: float | None = None
 
@@ -829,7 +830,7 @@ class GCR3PairUCCDParameterization(_ExponentialPairUCCDReferenceMixin):
     nocc: int
     base_parameterization: IGCR3SpinRestrictedParameterization | None = None
     left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
-    right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
+    right_orbital_chart_override: object = field(default_factory=GCR2TraceFixedFullUnitaryChart)
     real_right_orbital_chart: bool = False
     left_right_ov_relative_scale: float | None = None
     tau_seed_scale: float = 0.0
@@ -958,7 +959,7 @@ class GCR4PairUCCDParameterization(_ExponentialPairUCCDReferenceMixin):
     nocc: int
     base_parameterization: IGCR4SpinRestrictedParameterization | None = None
     left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
-    right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
+    right_orbital_chart_override: object = field(default_factory=GCR2TraceFixedFullUnitaryChart)
     real_right_orbital_chart: bool = False
     left_right_ov_relative_scale: float | None = None
     tau_seed_scale: float = 0.0
@@ -1726,7 +1727,7 @@ class GCR2ProductPairUCCDParameterization(_ProductPairUCCDReferenceMixin):
     base_parameterization: IGCR2SpinRestrictedParameterization | None = None
     left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
     middle_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
-    right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
+    right_orbital_chart_override: object = field(default_factory=GCR2TraceFixedFullUnitaryChart)
     real_right_orbital_chart: bool = False
     left_right_ov_relative_scale: float | None = None
 
@@ -1776,7 +1777,7 @@ class GCR3ProductPairUCCDParameterization(_ProductPairUCCDReferenceMixin):
     nocc: int
     base_parameterization: IGCR3SpinRestrictedParameterization | None = None
     left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
-    right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
+    right_orbital_chart_override: object = field(default_factory=GCR2TraceFixedFullUnitaryChart)
     real_right_orbital_chart: bool = False
     left_right_ov_relative_scale: float | None = None
     tau_seed_scale: float = 0.0
@@ -1829,7 +1830,7 @@ class GCR4ProductPairUCCDParameterization(_ProductPairUCCDReferenceMixin):
     nocc: int
     base_parameterization: IGCR4SpinRestrictedParameterization | None = None
     left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
-    right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
+    right_orbital_chart_override: object = field(default_factory=GCR2TraceFixedFullUnitaryChart)
     real_right_orbital_chart: bool = False
     left_right_ov_relative_scale: float | None = None
     tau_seed_scale: float = 0.0
@@ -1910,7 +1911,7 @@ class GCRPairUCCDParameterization:
     interaction_pairs: list[tuple[int, int]] | None = None
     base_parameterization: object | None = None
     left_orbital_chart: object = field(default_factory=IGCR2LeftUnitaryChart)
-    right_orbital_chart_override: object = field(default_factory=IGCR2LeftUnitaryChart)
+    right_orbital_chart_override: object = field(default_factory=GCR2TraceFixedFullUnitaryChart)
     real_right_orbital_chart: bool = False
     left_right_ov_relative_scale: float | None = None
     tau_seed_scale: float = 0.0
