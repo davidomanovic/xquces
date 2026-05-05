@@ -8,6 +8,7 @@ import numpy as np
 from xquces.gcr.restricted_jacobian import (
     make_restricted_gcr_jacobian,
     make_restricted_gcr_subspace_jacobian,
+    make_restricted_gcr_vjp,
 )
 from xquces.states import hartree_fock_state
 
@@ -215,6 +216,25 @@ class FixedReferenceAnsatzParameterization:
             self.nelec,
         )(params, directions)
 
+    def energy_gradient_from_parameters(
+        self,
+        params: np.ndarray,
+        H,
+    ) -> tuple[float, np.ndarray]:
+        params = np.asarray(params, dtype=np.float64)
+        if params.shape != (self.n_params,):
+            raise ValueError(f"Expected {(self.n_params,)}, got {params.shape}.")
+        psi = self.state_from_parameters(params)
+        Hpsi = H @ psi
+        energy = float(np.vdot(psi, Hpsi).real)
+        residual = Hpsi - energy * psi
+        grad = make_restricted_gcr_vjp(
+            self.ansatz_parameterization,
+            self.reference_state,
+            self.nelec,
+        )(params, residual)
+        return energy, grad
+
     def params_to_vec(self) -> Callable[[np.ndarray], np.ndarray]:
         def func(params: np.ndarray) -> np.ndarray:
             return self.state_from_parameters(params)
@@ -382,10 +402,9 @@ def make_composite_reference_ansatz_vjp(
         )
         n_ansatz = parameterization.n_ansatz_params
         if n_ansatz:
-            J_ansatz = make_restricted_gcr_jacobian(
+            grad_ansatz = make_restricted_gcr_vjp(
                 ansatz_parameterization, reference_state, nelec
-            )(ansatz_params)
-            grad_ansatz = 2.0 * (J_ansatz.conj().T @ v).real
+            )(ansatz_params, v)
         else:
             grad_ansatz = np.zeros(0)
 
